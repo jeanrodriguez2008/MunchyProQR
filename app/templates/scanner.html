@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>MunchyProQR - Escáner de Producción</title>
+
+    <!-- Iconos y Manifest PWA -->
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="icon" type="image/png" href="/static/img/icono.png">
+    <link rel="apple-touch-icon" href="/static/img/icono.png">
+    <meta name="theme-color" content="#2563eb">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Librería de lectura QR por Cámara -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <script>
+        if (!localStorage.getItem('token')) {
+            window.location.replace('/');
+        }
+    </script>
+</head>
+<body class="bg-gray-100 min-h-screen pb-10">
+
+    <!-- Encabezado Móvil con Logo -->
+    <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-30">
+        <div class="max-w-md mx-auto px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <img src="/static/img/logo.png" alt="Munchy" class="h-8 object-contain" onerror="this.style.display='none'">
+                <div>
+                    <h1 class="text-base font-bold text-gray-800 leading-tight">Escáner QR</h1>
+                    <p class="text-[10px] text-gray-500">MunchyProQR</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button id="btnVolverNav" onclick="redirigirSegunRol()" class="hidden bg-indigo-50 text-indigo-700 font-bold text-xs px-2.5 py-1.5 rounded-lg border border-indigo-200">
+                    📊 Panel
+                </button>
+                <button onclick="cerrarSesion()" class="bg-red-50 text-red-600 font-bold text-xs px-2.5 py-1.5 rounded-lg border border-red-200">
+                    Salir
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-md mx-auto p-4 space-y-4">
+
+        <!-- Banner de Estado / Errores -->
+        <div id="bannerAlerta" class="hidden p-3 rounded-xl text-xs font-bold shadow-sm transition-all text-center"></div>
+
+        <!-- CÁMARA ESCÁNER -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3">
+            <div class="flex justify-between items-center">
+                <h2 class="text-sm font-bold text-gray-700 flex items-center gap-1">
+                    📷 Lector de Código QR
+                </h2>
+                <span id="estadoCamara" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                    Inactiva
+                </span>
+            </div>
+
+            <div class="relative bg-black rounded-lg overflow-hidden min-h-[220px] flex items-center justify-center">
+                <div id="reader" class="w-full"></div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 pt-1">
+                <button id="btnIniciarCam" onclick="iniciarCamara()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-bold text-xs hover:bg-blue-700 transition">
+                    ▶️ Iniciar Cámara
+                </button>
+                <button id="btnDetenerCam" onclick="detenerCamara()" disabled class="w-full bg-gray-300 text-gray-600 py-2 rounded-lg font-bold text-xs transition cursor-not-allowed">
+                    ⏹️ Detener
+                </button>
+            </div>
+        </div>
+
+        <!-- FORMULARIO DE CONFIRMACIÓN / LECTURA -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 space-y-3">
+            <h2 class="text-sm font-bold text-gray-800 border-b pb-2">📦 Datos del Ticket Escaneado</h2>
+
+            <form id="formSalida" class="space-y-2 text-xs">
+                <div>
+                    <label class="block text-gray-500 font-bold">Ticket N° (Recibo):</label>
+                    <input type="text" id="num_recibo" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded font-bold text-blue-700 outline-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-gray-500 font-bold">Código SKU:</label>
+                        <input type="text" id="codigo_articulo" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded font-semibold text-gray-800 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 font-bold">Cantidad (und):</label>
+                        <input type="number" id="cantidad" required class="w-full mt-0.5 p-2 border rounded font-bold text-green-700 outline-none focus:ring-2 focus:ring-green-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-gray-500 font-bold">Descripción del Producto:</label>
+                    <input type="text" id="descripcion" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded font-medium text-gray-800 outline-none">
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-gray-500 font-bold">Lote:</label>
+                        <input type="text" id="lote" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded text-gray-700 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 font-bold">F. Vencimiento:</label>
+                        <input type="text" id="fecha_vencimiento" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded text-gray-700 outline-none">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2">
+                    <div>
+                        <label class="block text-gray-500 font-bold">Turno:</label>
+                        <input type="text" id="turno" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded text-gray-700 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 font-bold">Grupo:</label>
+                        <input type="text" id="grupo" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded text-gray-700 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-500 font-bold">N° OP:</label>
+                        <input type="text" id="num_op" readonly class="w-full mt-0.5 p-2 bg-gray-50 border rounded text-gray-700 outline-none">
+                    </div>
+                </div>
+
+                <input type="hidden" id="codigo_qr">
+
+                <button type="submit" id="btnGuardar" disabled class="w-full mt-3 bg-gray-300 text-gray-500 py-2.5 rounded-lg font-bold transition cursor-not-allowed">
+                    ✅ Registrar Salida de Producción
+                </button>
+            </form>
+        </div>
+
+        <!-- RECENT ESCANEOS EN EL TURNO -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+            <h3 class="text-xs font-bold text-gray-700 uppercase mb-2">📋 Últimos Escaneos de Hoy</h3>
+            <div id="listaUltimosEscaneos" class="space-y-1.5 max-h-48 overflow-y-auto pr-1 text-xs">
+                <p class="text-gray-400 text-center py-2">No has realizado escaneos aún hoy.</p>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const token = localStorage.getItem('token');
+        const rol = localStorage.getItem('rol') || 'analista';
+        let html5QrCode = null;
+
+        // Mostrar botón para regresar al Dashboard si es Coordinador o Webmaster
+        if (rol === 'webmaster' || rol === 'coordinador') {
+            document.getElementById('btnVolverNav').classList.remove('hidden');
+        }
+
+        function redirigirSegunRol() {
+            if (rol === 'webmaster') window.location.href = '/webmaster-view';
+            else if (rol === 'coordinador') window.location.href = '/dashboard-view';
+        }
+
+        function cerrarSesion() {
+            localStorage.clear();
+            window.location.replace('/');
+        }
+
+        function mostrarAlerta(msg, esError = false) {
+            const banner = document.getElementById('bannerAlerta');
+            banner.innerText = msg;
+            banner.className = `p-3 rounded-xl text-xs font-bold shadow-sm transition-all text-center ${
+                esError ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-green-100 text-green-700 border border-green-300'
+            }`;
+            banner.classList.remove('hidden');
+            setTimeout(() => banner.classList.add('hidden'), 4000);
+        }
+
+        function emitirSonidoBeep() {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                gain.gain.setValueAtTime(0.1, ctx.currentTime);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.15);
+            } catch (e) {}
+        }
+
+        // Decodificación de la trama del QR oficial
+        function parsearCodigoQR(texto) {
+            document.getElementById('codigo_qr').value = texto;
+            const partes = texto.split('|').map(p => p.trim());
+
+            if (partes.length >= 6) {
+                document.getElementById('codigo_articulo').value = partes[0] || '';
+                document.getElementById('descripcion').value = partes[1] || '';
+                document.getElementById('lote').value = partes[2] || '';
+                document.getElementById('fecha_vencimiento').value = partes[3] || '';
+                document.getElementById('cantidad').value = partes[4] || 1;
+                document.getElementById('num_recibo').value = partes[5] || '';
+                document.getElementById('turno').value = partes[6] || '';
+                document.getElementById('grupo').value = partes[7] || '';
+                document.getElementById('num_op').value = partes[9] || '';
+            } else {
+                document.getElementById('descripcion').value = texto;
+                document.getElementById('cantidad').value = 1;
+            }
+
+            const btn = document.getElementById('btnGuardar');
+            btn.disabled = false;
+            btn.className = "w-full mt-3 bg-green-600 text-white py-2.5 rounded-lg font-bold hover:bg-green-700 transition text-xs";
+        }
+
+        function onScanSuccess(decodedText) {
+            emitirSonidoBeep();
+            parsearCodigoQR(decodedText);
+            mostrarAlerta("✅ Código QR leído correctamente. Confirma la cantidad.");
+            detenerCamara();
+        }
+
+        function iniciarCamara() {
+            html5QrCode = new Html5Qrcode("reader");
+            const config = { fps: 15, qrbox: { width: 220, height: 220 } };
+
+            html5QrCode.start(
+                { facingMode: "environment" },
+                config,
+                onScanSuccess
+            ).then(() => {
+                document.getElementById('estadoCamara').innerText = "Activa";
+                document.getElementById('estadoCamara').className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-100 text-green-700";
+                document.getElementById('btnIniciarCam').disabled = true;
+                document.getElementById('btnIniciarCam').className = "w-full bg-gray-300 text-gray-500 py-2 rounded-lg font-bold text-xs cursor-not-allowed";
+                document.getElementById('btnDetenerCam').disabled = false;
+                document.getElementById('btnDetenerCam').className = "w-full bg-red-600 text-white py-2 rounded-lg font-bold text-xs hover:bg-red-700 transition";
+            }).catch(err => {
+                mostrarAlerta("❌ No se pudo acceder a la cámara del dispositivo.", true);
+            });
+        }
+
+        function detenerCamara() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('estadoCamara').innerText = "Inactiva";
+                    document.getElementById('estadoCamara').className = "text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-500";
+                    document.getElementById('btnIniciarCam').disabled = false;
+                    document.getElementById('btnIniciarCam').className = "w-full bg-blue-600 text-white py-2 rounded-lg font-bold text-xs hover:bg-blue-700 transition";
+                    document.getElementById('btnDetenerCam').disabled = true;
+                    document.getElementById('btnDetenerCam').className = "w-full bg-gray-300 text-gray-500 py-2 rounded-lg font-bold text-xs cursor-not-allowed";
+                }).catch(() => {});
+            }
+        }
+
+        document.getElementById('formSalida').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const payload = {
+                codigo_qr: document.getElementById('codigo_qr').value,
+                codigo_articulo: document.getElementById('codigo_articulo').value,
+                descripcion: document.getElementById('descripcion').value,
+                lote: document.getElementById('lote').value,
+                fecha_vencimiento: document.getElementById('fecha_vencimiento').value,
+                cantidad: parseInt(document.getElementById('cantidad').value) || 1,
+                num_recibo: document.getElementById('num_recibo').value,
+                turno: document.getElementById('turno').value,
+                grupo: document.getElementById('grupo').value,
+                num_op: document.getElementById('num_op').value
+            };
+
+            try {
+                const res = await fetch('/api/salidas/registrar', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Error al registrar la salida.");
+                }
+
+                mostrarAlerta("🎉 ¡Salida de Producción registrada exitosamente!");
+                document.getElementById('formSalida').reset();
+                
+                const btn = document.getElementById('btnGuardar');
+                btn.disabled = true;
+                btn.className = "w-full mt-3 bg-gray-300 text-gray-500 py-2.5 rounded-lg font-bold transition cursor-not-allowed";
+
+                cargarUltimosEscaneos();
+            } catch (err) {
+                mostrarAlerta(`❌ ${err.message}`, true);
+            }
+        });
+
+        async function cargarUltimosEscaneos() {
+            try {
+                const res = await fetch('/api/salidas/', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const container = document.getElementById('listaUltimosEscaneos');
+                    if (data.length === 0) {
+                        container.innerHTML = `<p class="text-gray-400 text-center py-2">No has realizado escaneos aún hoy.</p>`;
+                        return;
+                    }
+
+                    container.innerHTML = data.slice(0, 5).map(s => `
+                        <div class="flex justify-between items-center p-2 bg-gray-50 rounded border">
+                            <div>
+                                <span class="font-bold text-blue-600 block">[Ticket #${s.num_recibo || 'N/A'}]</span>
+                                <span class="text-gray-700 font-medium">${s.descripcion}</span>
+                            </div>
+                            <span class="font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full">${s.cantidad} und.</span>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {}
+        }
+
+        cargarUltimosEscaneos();
+    </script>
+</body>
+</html>
