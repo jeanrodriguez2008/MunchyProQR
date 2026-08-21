@@ -269,12 +269,16 @@
             }
         }
 
-        function confirmarConciliacionAlmacen(datos) {
+        async function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // VALIDAR SI EL TICKET YA FUE CONCILIADO USANDO .trim() EN JS
+            // 1. REFRESCAR LA LISTA EN TIEMPO REAL DESDE LA BASE DE DATOS
+            await cargarUltimos();
+
+            // 2. BUSCAR EL TICKET Y VERIFICAR SU ESTADO
             const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
-            if (ticketExistente && ticketExistente.recibido_almacen) {
+
+            if (ticketExistente && Boolean(ticketExistente.recibido_almacen) === true) {
                 Swal.fire({
                     icon: 'warning',
                     title: 'Ticket Ya Conciliado',
@@ -425,8 +429,6 @@
                 });
 
                 if (response.ok) {
-                    const data = await response.json();
-
                     Swal.fire({
                         icon: 'success',
                         title: '¡Conciliación Exitosa!',
@@ -475,8 +477,16 @@
                 });
 
                 if (res.ok) {
-                    const data = await res.json();
-                    salidasCache = Array.isArray(data) ? data : (data.data || []);
+                    const jsonRes = await res.json();
+                    
+                    // EXTRAER ARRAY DEPENDIENDO SI ES DIC O LIST
+                    if (Array.isArray(jsonRes)) {
+                        salidasCache = jsonRes;
+                    } else if (jsonRes && Array.isArray(jsonRes.data)) {
+                        salidasCache = jsonRes.data;
+                    } else {
+                        salidasCache = [];
+                    }
 
                     const div = document.getElementById('listaUltimos');
                     if (!salidasCache || salidasCache.length === 0) {
@@ -484,20 +494,23 @@
                         return;
                     }
 
-                    div.innerHTML = salidasCache.map(s => `
-                        <div class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
-                            <div>
-                                <span class="font-bold text-gray-800 block">${s.descripcion}</span>
-                                <span class="text-[10px] text-gray-500">Ticket: ${s.num_recibo || 'N/A'} | Fecha: ${s.fecha_hora || 'N/A'}</span>
+                    div.innerHTML = salidasCache.map(s => {
+                        const estaConciliado = Boolean(s.recibido_almacen);
+                        return `
+                            <div class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
+                                <div>
+                                    <span class="font-bold text-gray-800 block">${s.descripcion}</span>
+                                    <span class="text-[10px] text-gray-500">Ticket: ${s.num_recibo || 'N/A'} | Fecha: ${s.fecha_hora || 'N/A'}</span>
+                                </div>
+                                <div>
+                                    ${estaConciliado 
+                                        ? `<span class="font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">✅ Conciliado</span>`
+                                        : `<span class="font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">⏳ Pendiente</span>`
+                                    }
+                                </div>
                             </div>
-                            <div>
-                                ${s.recibido_almacen 
-                                    ? `<span class="font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">✅ Conciliado</span>`
-                                    : `<span class="font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200">⏳ Pendiente</span>`
-                                }
-                            </div>
-                        </div>
-                    `).join('');
+                        `;
+                    }).join('');
                 }
             } catch (e) {
                 console.error("Error al cargar últimos escaneos:", e);

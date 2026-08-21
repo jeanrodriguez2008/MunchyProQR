@@ -83,8 +83,9 @@ async def conciliar_entrada_almacen(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.requiere_almacenista_o_superior)
 ):
+    num_recibo_limpio = datos.num_recibo.strip()
     ticket = db.query(models.SalidaProduccion).filter(
-        models.SalidaProduccion.num_recibo == datos.num_recibo.strip()
+        models.SalidaProduccion.num_recibo == num_recibo_limpio
     ).first()
 
     if not ticket:
@@ -93,13 +94,13 @@ async def conciliar_entrada_almacen(
             detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
         )
 
-    if getattr(ticket, 'recibido_almacen', False):
+    if bool(getattr(ticket, 'recibido_almacen', False)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
         )
 
-    # 1. ACTUALIZAR Y ASEGURAR COMMIT EN BD DE INMEDIATO
+    # 1. ACTUALIZAR Y FORZAR COMMIT EN BASE DE DATOS
     ticket.recibido_almacen = True
     ticket.fecha_hora_recepcion = datetime.now()
     ticket.usuario_recepcion_id = usuario_actual.id
@@ -115,7 +116,7 @@ async def conciliar_entrada_almacen(
             detail=f"Error al confirmar conciliación en BD: {str(err_db)}"
         )
 
-    # 2. NOTIFICAR A MUNCHYGUARD PT EN SEGUNDO PLANO
+    # 2. NOTIFICACIÓN EXTERNA A MUNCHYGUARD PT EN SEGUNDO PLANO
     payload_guard = {
         "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
         "numero_lote": str(ticket.lote or "").strip().upper(),
