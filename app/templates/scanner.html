@@ -223,7 +223,6 @@
 
                         detenerCamara();
 
-                        // RETARDO DE 100MS PARA LIBERAR EL HILO DE LA CÁMARA
                         setTimeout(() => {
                             if (rol === 'almacenista') {
                                 confirmarConciliacionAlmacen(datos);
@@ -366,6 +365,8 @@
                     body: JSON.stringify(payload)
                 });
 
+                const data = await response.json();
+
                 if (response.status === 401) {
                     Swal.fire({ icon: 'error', title: 'Sesión Expirada', text: 'Vuelve a iniciar sesión.' })
                         .then(() => cerrarSesion());
@@ -373,8 +374,6 @@
                 }
 
                 if (response.ok) {
-                    const data = await response.json();
-                    
                     Swal.fire({
                         icon: 'success',
                         title: '¡Registrado por Producción!',
@@ -389,11 +388,10 @@
 
                     await cargarUltimos();
                 } else {
-                    const err = await response.json();
                     Swal.fire({
                         icon: 'error',
                         title: 'Atención',
-                        text: err.detail || "Ocurrió un problema al procesar el registro.",
+                        text: data.detail || "Ocurrió un problema al procesar el registro.",
                         confirmButtonColor: '#ef4444'
                     });
 
@@ -404,8 +402,8 @@
             } catch (error) {
                 Swal.fire({
                     icon: 'error',
-                    title: 'Error de Red',
-                    text: 'Comprueba tu conexión o vuelve a iniciar sesión.',
+                    title: 'Error de Conexión',
+                    text: error.message || 'Comprueba tu red o servidor.',
                     confirmButtonColor: '#ef4444'
                 });
 
@@ -439,6 +437,9 @@
                     return;
                 }
 
+                // LECTURA SEGURA DE LA RESPUESTA EN FORMATO JSON
+                const data = await response.json();
+
                 if (response.ok) {
                     Swal.fire({
                         icon: 'success',
@@ -454,12 +455,10 @@
 
                     await cargarUltimos();
                 } else {
-                    const err = await response.json();
-
                     Swal.fire({
                         icon: 'warning',
                         title: 'Atención',
-                        text: err.detail || 'Operación denegada.',
+                        text: data.detail || 'Operación denegada.',
                         confirmButtonColor: '#d97706'
                     });
 
@@ -468,7 +467,6 @@
                     btn.className = "w-full bg-amber-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-amber-700 transition shadow-md flex items-center justify-center gap-1 mt-2 cursor-pointer";
                 }
             } catch (error) {
-                // MUESTRA EL DETALLE DEL ERROR REAL EN LUGAR DE SOLO "ERROR DE RED"
                 Swal.fire({
                     icon: 'error',
                     title: 'Error en la petición',

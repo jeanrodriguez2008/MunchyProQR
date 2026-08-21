@@ -31,12 +31,11 @@ URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguardpt.onre
 
 
 async def notificar_munchyguard_async(payload: dict):
-    """Notificación externa en segundo plano desacoplada del request web para evitar timeouts."""
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             await client.post(URL_MUNCHYGUARD_PT, json=payload)
     except Exception as err:
-        print(f"⚠️ Alerta MunchyGuardPT (Segundo Plano): {str(err)}")
+        print(f"⚠️ Alerta MunchyGuardPT: {str(err)}")
 
 
 @router.post("/registrar", response_model=schemas.SalidaResponse)
@@ -93,53 +92,61 @@ async def conciliar_entrada_almacen(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.requiere_almacenista_o_superior)
 ):
-    num_recibo_limpio = datos.num_recibo.strip()
-    ticket = db.query(models.SalidaProduccion).filter(
-        models.SalidaProduccion.num_recibo == num_recibo_limpio
-    ).first()
-
-    if not ticket:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
-        )
-
-    if ticket.recibido_almacen is True:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
-        )
-
-    # 1. GUARDAR Y CONFIRMAR EN BD LOCAL PRIMERO
-    ticket.recibido_almacen = True
-    ticket.fecha_hora_recepcion = datetime.now()
-    ticket.usuario_recepcion_id = usuario_actual.id
-
     try:
+        num_recibo_limpio = str(datos.num_recibo).strip()
+        ticket = db.query(models.SalidaProduccion).filter(
+            models.SalidaProduccion.num_recibo == num_recibo_limpio
+        ).first()
+
+        if not ticket:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
+            )
+
+        # VALIDACIÓN TOLERANTE A NULL / NONE EN BD
+        if getattr(ticket, 'recibido_almacen', False) is True:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
+            )
+
+        # 1. ACTUALIZAR CAMPOS CON ASIGNACIÓN SEGURA
+        ticket.recibido_almacen = True
+        
+        if hasattr(ticket, 'fecha_hora_recepcion'):
+            ticket.fecha_hora_recepcion = datetime.now()
+            
+        if hasattr(ticket, 'usuario_recepcion_id'):
+            ticket.usuario_recepcion_id = usuario_actual.id
+
         db.add(ticket)
         db.commit()
         db.refresh(ticket)
-    except Exception as err_db:
+
+        # 2. SEGUNDO PLANO
+        payload_guard = {
+            "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
+            "numero_lote": str(ticket.lote or "").strip().upper(),
+            "fecha_vencimiento": str(ticket.fecha_vencimiento or "").strip(),
+            "cantidad": int(ticket.cantidad or 1),
+            "almacen_destino": str(datos.almacen_destino or "ALM01").strip().upper(),
+            "referencia_documento": str(ticket.num_recibo or "PRO-QR").strip().upper(),
+            "usuario": str(usuario_actual.username).strip()
+        }
+
+        asyncio.create_task(notificar_munchyguard_async(payload_guard))
+
+        return ticket
+
+    except HTTPException as http_ex:
+        raise http_ex
+    except Exception as err_general:
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al confirmar conciliación en BD: {str(err_db)}"
+            detail=f"Error interno al conciliar: {str(err_general)}"
         )
-
-    # 2. DISPARAR LA NOTIFICACIÓN EXTERNA SIN ESPERAR RESPUESTA (BACKGROUND TASK)
-    payload_guard = {
-        "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
-        "numero_lote": str(ticket.lote or "").strip().upper(),
-        "fecha_vencimiento": str(ticket.fecha_vencimiento or "").strip(),
-        "cantidad": int(ticket.cantidad or 1),
-        "almacen_destino": str(datos.almacen_destino or "ALM01").strip().upper(),
-        "referencia_documento": str(ticket.num_recibo or "PRO-QR").strip().upper(),
-        "usuario": str(usuario_actual.username).strip()
-    }
-
-    asyncio.create_task(notificar_munchyguard_async(payload_guard))
-
-    return ticket
 
 
 @router.get("/")
@@ -168,7 +175,7 @@ def listar_salidas(
 
         respuesta_data = []
         for s in registros:
-            recibido = bool(s.recibido_almacen)
+            recibido = bool(getattr(s, 'recibido_almacen', False))
             f_recepcion = getattr(s, 'fecha_hora_recepcion', None)
             u_recepcion = getattr(s, 'usuario_recepcion', None)
 
@@ -367,7 +374,7 @@ def exportar_excel(
         u_rec = getattr(s, 'usuario_recepcion', None)
         nombre_almacenista = u_rec.username if u_rec else "N/A"
         
-        recibido = bool(s.recibido_almacen)
+        recibido = bool(getattr(s, 'recibido_almacen', False))
         estado_almacen = "CONCILIADO" if recibido else "PENDIENTE"
 
         f_rec = getattr(s, 'fecha_hora_recepcion', None)
