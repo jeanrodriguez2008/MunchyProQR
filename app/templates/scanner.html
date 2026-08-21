@@ -223,16 +223,19 @@
 
                         detenerCamara();
 
-                        if (rol === 'almacenista') {
-                            confirmarConciliacionAlmacen(datos);
-                        } else {
-                            Swal.fire({
-                                icon: 'success',
-                                title: '¡QR Lectura Correcta!',
-                                text: `Ticket N° ${datos.num_recibo} procesado. OP: ${datos.num_op}`,
-                                confirmButtonColor: '#2563eb'
-                            });
-                        }
+                        // RETARDO DE 100MS PARA LIBERAR EL HILO DE LA CÁMARA
+                        setTimeout(() => {
+                            if (rol === 'almacenista') {
+                                confirmarConciliacionAlmacen(datos);
+                            } else {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: '¡QR Lectura Correcta!',
+                                    text: `Ticket N° ${datos.num_recibo} procesado. OP: ${datos.num_op}`,
+                                    confirmButtonColor: '#2563eb'
+                                });
+                            }
+                        }, 100);
                     } else {
                         Swal.fire({
                             icon: 'warning',
@@ -272,7 +275,6 @@
         function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // VALIDACIÓN EN MEMORIA LOCAL
             const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
 
             if (ticketExistente && (ticketExistente.recibido_almacen === true || ticketExistente.recibido_almacen === "true")) {
@@ -466,10 +468,11 @@
                     btn.className = "w-full bg-amber-600 text-white py-3 rounded-xl font-bold text-xs hover:bg-amber-700 transition shadow-md flex items-center justify-center gap-1 mt-2 cursor-pointer";
                 }
             } catch (error) {
+                // MUESTRA EL DETALLE DEL ERROR REAL EN LUGAR DE SOLO "ERROR DE RED"
                 Swal.fire({
                     icon: 'error',
-                    title: 'Error de Red',
-                    text: 'No se pudo conectar con el servidor.',
+                    title: 'Error en la petición',
+                    text: error.message || 'No se pudo conectar con el servidor.',
                     confirmButtonColor: '#ef4444'
                 });
 
