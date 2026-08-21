@@ -30,12 +30,10 @@ pwd_context = CryptContext(
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def verificar_password(plain_password: str, hashed_password: str) -> bool:
-    # Trunca automáticamente a 72 bytes para prevenir excepciones de bcrypt
     plain_password_bytes = plain_password.encode('utf-8')[:72]
     return pwd_context.verify(plain_password_bytes, hashed_password)
 
 def obtener_password_hash(password: str) -> str:
-    # Trunca automáticamente a 72 bytes para prevenir excepciones de bcrypt
     password_bytes = password.encode('utf-8')[:72]
     return pwd_context.hash(password_bytes)
 
@@ -93,10 +91,20 @@ def requiere_coordinador(
         )
     return usuario_actual
 
+def requiere_almacenista_o_superior(
+    usuario_actual: Usuario = Depends(obtener_usuario_actual)
+) -> Usuario:
+    if usuario_actual.rol.lower() not in ["almacenista", "coordinador", "webmaster"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de Almacenista, Coordinador o Webmaster"
+        )
+    return usuario_actual
+
 def requiere_analista_o_coordinador(
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ) -> Usuario:
-    if usuario_actual.rol.lower() not in ["analista", "coordinador", "webmaster"]:
+    if usuario_actual.rol.lower() not in ["analista", "almacenista", "coordinador", "webmaster"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Rol no autorizado dentro del sistema"
