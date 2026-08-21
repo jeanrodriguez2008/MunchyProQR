@@ -92,7 +92,6 @@ def verificar_estado_ticket(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
-    """Endpoint directo para validar el estado de un ticket sin depender del caché local."""
     num_ticket_limpio = num_recibo.strip()
     ticket = db.query(models.SalidaProduccion).filter(
         models.SalidaProduccion.num_recibo == num_ticket_limpio
@@ -110,7 +109,7 @@ def verificar_estado_ticket(
     }
 
 
-@router.post("/conciliar", response_model=schemas.SalidaResponse)
+@router.post("/conciliar")
 async def conciliar_entrada_almacen(
     datos: schemas.ConciliacionRequest,
     db: Session = Depends(get_db),
@@ -128,25 +127,23 @@ async def conciliar_entrada_almacen(
                 detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
             )
 
-        # VALIDACIÓN STRICTA Y DIRECTA EN BASE DE DATOS
+        # SI YA FUE CONCILIADO, BLOQUEAR DE INMEDIATO EN BACKEND
         if bool(getattr(ticket, 'recibido_almacen', False)) is True:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
             )
 
-        # 1. ACTUALIZAR CAMPOS
-        ticket.recibido_almacen = True
-        
-        if hasattr(ticket, 'fecha_hora_recepcion'):
-            ticket.fecha_hora_recepcion = datetime.now()
-            
-        if hasattr(ticket, 'usuario_recepcion_id'):
-            ticket.usuario_recepcion_id = usuario_actual.id
+        # 1. ACTUALIZACIÓN EXPLICITA EN BASE DE DATOS MEDIANTE UPDATE DIRECTO
+        db.query(models.SalidaProduccion).filter(
+            models.SalidaProduccion.id == ticket.id
+        ).update({
+            "recibido_almacen": True,
+            "fecha_hora_recepcion": datetime.now(),
+            "usuario_recepcion_id": usuario_actual.id
+        }, synchronize_session='evaluate')
 
-        db.add(ticket)
         db.commit()
-        db.refresh(ticket)
 
         # 2. SEGUNDO PLANO
         payload_guard = {
@@ -161,7 +158,12 @@ async def conciliar_entrada_almacen(
 
         asyncio.create_task(notificar_munchyguard_async(payload_guard))
 
-        return ticket
+        return {
+            "mensaje": "Conciliación exitosa",
+            "id": ticket.id,
+            "num_recibo": ticket.num_recibo,
+            "recibido_almacen": True
+        }
 
     except HTTPException as http_ex:
         raise http_ex

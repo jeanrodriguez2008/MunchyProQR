@@ -273,7 +273,7 @@
         async function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // CONSULTA DIRECTA AL ENDPOINT DE VERIFICACIÓN EN BASE DE DATOS REAL
+            // CONSULTA DIRECTA AL ENDPOINT DE VERIFICACIÓN EN BASE DE DATOS
             try {
                 const resVerif = await fetch(`/api/salidas/verificar/${encodeURIComponent(ticketNumero)}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -281,7 +281,7 @@
 
                 if (resVerif.ok) {
                     const infoTicket = await resVerif.json();
-                    if (infoTicket.existe && infoTicket.recibido_almacen) {
+                    if (infoTicket.existe && infoTicket.recibido_almacen === true) {
                         Swal.fire({
                             icon: 'warning',
                             title: 'Ticket Ya Conciliado',
@@ -490,7 +490,8 @@
 
         async function cargarUltimos() {
             try {
-                const res = await fetch('/api/salidas/?page=1&limit=50', {
+                // PARAMETRO PARA EVITAR CACHÉ DEL NAVEGADOR
+                const res = await fetch(`/api/salidas/?page=1&limit=50&_t=${Date.now()}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
