@@ -194,7 +194,7 @@
             html5QrCode.start(
                 { facingMode: "environment" },
                 config,
-                async (decodedText) => {
+                (decodedText) => {
                     const datos = parsearQR(decodedText);
                     if (datos) {
                         document.getElementById('codigo_qr').value = datos.codigo_qr;
@@ -224,7 +224,7 @@
                         detenerCamara();
 
                         if (rol === 'almacenista') {
-                            await confirmarConciliacionAlmacen(datos);
+                            confirmarConciliacionAlmacen(datos);
                         } else {
                             Swal.fire({
                                 icon: 'success',
@@ -269,11 +269,10 @@
             }
         }
 
-        async function confirmarConciliacionAlmacen(datos) {
+        function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            await cargarUltimos();
-
+            // VALIDACIÓN EN MEMORIA LOCAL
             const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
 
             if (ticketExistente && (ticketExistente.recibido_almacen === true || ticketExistente.recibido_almacen === "true")) {
@@ -309,7 +308,7 @@
             });
         }
 
-        async function procesarLectura(e) {
+        function procesarLectura(e) {
             e.preventDefault();
             const num_recibo = document.getElementById('num_recibo').value;
 
@@ -324,7 +323,7 @@
             }
 
             if (rol === 'almacenista') {
-                await confirmarConciliacionAlmacen({
+                confirmarConciliacionAlmacen({
                     num_recibo: num_recibo,
                     codigo_articulo: document.getElementById('codigo_articulo').value,
                     descripcion: document.getElementById('descripcion').value,
@@ -365,6 +364,12 @@
                     body: JSON.stringify(payload)
                 });
 
+                if (response.status === 401) {
+                    Swal.fire({ icon: 'error', title: 'Sesión Expirada', text: 'Vuelve a iniciar sesión.' })
+                        .then(() => cerrarSesion());
+                    return;
+                }
+
                 if (response.ok) {
                     const data = await response.json();
                     
@@ -397,8 +402,8 @@
             } catch (error) {
                 Swal.fire({
                     icon: 'error',
-                    title: 'Error de Conexión',
-                    text: 'Comprueba tu red o servidor.',
+                    title: 'Error de Red',
+                    text: 'Comprueba tu conexión o vuelve a iniciar sesión.',
                     confirmButtonColor: '#ef4444'
                 });
 
@@ -425,6 +430,12 @@
                         almacen_destino: "ALM01"
                     })
                 });
+
+                if (response.status === 401) {
+                    Swal.fire({ icon: 'error', title: 'Sesión Expirada', text: 'Vuelve a iniciar sesión.' })
+                        .then(() => cerrarSesion());
+                    return;
+                }
 
                 if (response.ok) {
                     Swal.fire({
@@ -473,6 +484,11 @@
                 const res = await fetch('/api/salidas/?page=1&limit=50', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
+
+                if (res.status === 401) {
+                    cerrarSesion();
+                    return;
+                }
 
                 if (res.ok) {
                     const jsonRes = await res.json();
