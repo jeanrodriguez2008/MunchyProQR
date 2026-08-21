@@ -194,7 +194,7 @@
             html5QrCode.start(
                 { facingMode: "environment" },
                 config,
-                (decodedText) => {
+                async (decodedText) => {
                     const datos = parsearQR(decodedText);
                     if (datos) {
                         document.getElementById('codigo_qr').value = datos.codigo_qr;
@@ -224,7 +224,7 @@
                         detenerCamara();
 
                         if (rol === 'almacenista') {
-                            confirmarConciliacionAlmacen(datos);
+                            await confirmarConciliacionAlmacen(datos);
                         } else {
                             Swal.fire({
                                 icon: 'success',
@@ -272,10 +272,8 @@
         async function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // 1. ESPERAR A QUE SE REFRESHEN LOS REGISTROS DESDE EL SERVIDOR
             await cargarUltimos();
 
-            // 2. VERIFICAR SI EL TICKET YA FIGURA COMO CONCILIADO
             const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
 
             if (ticketExistente && (ticketExistente.recibido_almacen === true || ticketExistente.recibido_almacen === "true")) {
@@ -311,7 +309,7 @@
             });
         }
 
-        function procesarLectura(e) {
+        async function procesarLectura(e) {
             e.preventDefault();
             const num_recibo = document.getElementById('num_recibo').value;
 
@@ -326,7 +324,7 @@
             }
 
             if (rol === 'almacenista') {
-                confirmarConciliacionAlmacen({
+                await confirmarConciliacionAlmacen({
                     num_recibo: num_recibo,
                     codigo_articulo: document.getElementById('codigo_articulo').value,
                     descripcion: document.getElementById('descripcion').value,
