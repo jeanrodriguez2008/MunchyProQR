@@ -272,13 +272,13 @@
         async function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // 1. REFRESCAR LA LISTA EN TIEMPO REAL DESDE LA BASE DE DATOS
+            // 1. ESPERAR A QUE SE REFRESHEN LOS REGISTROS DESDE EL SERVIDOR
             await cargarUltimos();
 
-            // 2. BUSCAR EL TICKET Y VERIFICAR SU ESTADO
+            // 2. VERIFICAR SI EL TICKET YA FIGURA COMO CONCILIADO
             const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
 
-            if (ticketExistente && Boolean(ticketExistente.recibido_almacen) === true) {
+            if (ticketExistente && (ticketExistente.recibido_almacen === true || ticketExistente.recibido_almacen === "true")) {
                 Swal.fire({
                     icon: 'warning',
                     title: 'Ticket Ya Conciliado',
@@ -479,7 +479,6 @@
                 if (res.ok) {
                     const jsonRes = await res.json();
                     
-                    // EXTRAER ARRAY DEPENDIENDO SI ES DIC O LIST
                     if (Array.isArray(jsonRes)) {
                         salidasCache = jsonRes;
                     } else if (jsonRes && Array.isArray(jsonRes.data)) {
@@ -495,7 +494,7 @@
                     }
 
                     div.innerHTML = salidasCache.map(s => {
-                        const estaConciliado = Boolean(s.recibido_almacen);
+                        const estaConciliado = s.recibido_almacen === true || s.recibido_almacen === "true";
                         return `
                             <div class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
                                 <div>

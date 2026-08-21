@@ -94,13 +94,13 @@ async def conciliar_entrada_almacen(
             detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
         )
 
-    if bool(getattr(ticket, 'recibido_almacen', False)):
+    if ticket.recibido_almacen is True:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
         )
 
-    # 1. ACTUALIZAR Y FORZAR COMMIT EN BASE DE DATOS
+    # 1. ACTUALIZAR BD Y ASEGURAR PERSISTENCIA
     ticket.recibido_almacen = True
     ticket.fecha_hora_recepcion = datetime.now()
     ticket.usuario_recepcion_id = usuario_actual.id
@@ -116,7 +116,7 @@ async def conciliar_entrada_almacen(
             detail=f"Error al confirmar conciliación en BD: {str(err_db)}"
         )
 
-    # 2. NOTIFICACIÓN EXTERNA A MUNCHYGUARD PT EN SEGUNDO PLANO
+    # 2. NOTIFICACIÓN A MUNCHYGUARD PT EN SEGUNDO PLANO
     payload_guard = {
         "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
         "numero_lote": str(ticket.lote or "").strip().upper(),
@@ -162,7 +162,7 @@ def listar_salidas(
 
         respuesta_data = []
         for s in registros:
-            recibido = getattr(s, 'recibido_almacen', False)
+            recibido = bool(s.recibido_almacen)
             f_recepcion = getattr(s, 'fecha_hora_recepcion', None)
             u_recepcion = getattr(s, 'usuario_recepcion', None)
 
@@ -180,7 +180,7 @@ def listar_salidas(
                 "fecha_contabilizacion": s.fecha_contabilizacion,
                 "num_op": s.num_op,
                 "fecha_hora": s.fecha_hora.strftime("%d/%m/%Y %I:%M:%S %p") if s.fecha_hora else None,
-                "recibido_almacen": bool(recibido),
+                "recibido_almacen": recibido,
                 "fecha_hora_recepcion": f_recepcion.strftime("%d/%m/%Y %I:%M:%S %p") if f_recepcion else None,
                 "usuario_recepcion": u_recepcion.username if u_recepcion else None
             })
@@ -361,7 +361,7 @@ def exportar_excel(
         u_rec = getattr(s, 'usuario_recepcion', None)
         nombre_almacenista = u_rec.username if u_rec else "N/A"
         
-        recibido = getattr(s, 'recibido_almacen', False)
+        recibido = bool(s.recibido_almacen)
         estado_almacen = "CONCILIADO" if recibido else "PENDIENTE"
 
         f_rec = getattr(s, 'fecha_hora_recepcion', None)
