@@ -359,7 +359,7 @@
                     btn.innerText = "✅ Registrar Salida de Producción";
                     btn.className = "w-full bg-gray-300 text-gray-500 py-3 rounded-xl font-bold text-xs transition shadow-sm cursor-not-allowed flex items-center justify-center gap-1 mt-2";
 
-                    cargarUltimos();
+                    await cargarUltimos();
                 } else {
                     const err = await response.json();
                     Swal.fire({
@@ -420,7 +420,8 @@
                     btn.innerText = "🔍 Conciliar Recepción en Almacén";
                     btn.className = "w-full bg-gray-300 text-gray-500 py-3 rounded-xl font-bold text-xs transition shadow-sm cursor-not-allowed flex items-center justify-center gap-1 mt-2";
 
-                    cargarUltimos();
+                    // RECARGAR RECIENTES TRAS CONCILIAR
+                    await cargarUltimos();
                 } else {
                     const err = await response.json();
 

@@ -99,13 +99,23 @@ async def conciliar_entrada_almacen(
             detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
         )
 
-    setattr(ticket, 'recibido_almacen', True)
-    setattr(ticket, 'fecha_hora_recepcion', datetime.now())
-    setattr(ticket, 'usuario_recepcion_id', usuario_actual.id)
+    # 1. ACTUALIZAR Y ASEGURAR COMMIT EN BD DE INMEDIATO
+    ticket.recibido_almacen = True
+    ticket.fecha_hora_recepcion = datetime.now()
+    ticket.usuario_recepcion_id = usuario_actual.id
 
-    db.commit()
-    db.refresh(ticket)
+    try:
+        db.add(ticket)
+        db.commit()
+        db.refresh(ticket)
+    except Exception as err_db:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al confirmar conciliación en BD: {str(err_db)}"
+        )
 
+    # 2. NOTIFICAR A MUNCHYGUARD PT EN SEGUNDO PLANO SIN AFECTAR EL COMMIT LOCAL
     payload_guard = {
         "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
         "numero_lote": str(ticket.lote or "").strip().upper(),
@@ -117,12 +127,10 @@ async def conciliar_entrada_almacen(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.post(URL_MUNCHYGUARD_PT, json=payload_guard)
-            if response.status_code != 200:
-                print(f"⚠️ Alerta MunchyGuardPT: {response.text}")
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            await client.post(URL_MUNCHYGUARD_PT, json=payload_guard)
     except Exception as err_api:
-        print(f"❌ Error de conexión al notificar a MunchyGuardPT: {str(err_api)}")
+        print(f"⚠️ Alerta MunchyGuardPT: {str(err_api)}")
 
     return ticket
 
