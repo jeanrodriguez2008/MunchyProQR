@@ -357,10 +357,15 @@
                     cargarUltimos();
                 } else {
                     const err = await response.json();
+                    let mensajeError = err.detail || "Ocurrió un problema al procesar el registro.";
+                    if (mensajeError === "Method Not Allowed") {
+                        mensajeError = "Método de envío no permitido en el servidor.";
+                    }
+
                     Swal.fire({
                         icon: 'error',
-                        title: 'No se pudo guardar',
-                        text: err.detail || "Ocurrió un problema al procesar el registro.",
+                        title: 'Atención',
+                        text: mensajeError,
                         confirmButtonColor: '#ef4444'
                     });
 
@@ -388,6 +393,7 @@
             btn.innerText = "⏳ Conciliando en Almacén...";
 
             try {
+                // ENVÍO EXPLÍCITO VÍA MÉTODO POST
                 const response = await fetch(`/api/salidas/conciliar?num_recibo=${encodeURIComponent(numRecibo)}&almacen_destino=ALM01`, {
                     method: 'POST',
                     headers: {
@@ -413,11 +419,15 @@
                     cargarUltimos();
                 } else {
                     const err = await response.json();
-                    
+                    let mensajeError = err.detail || 'Operación denegada.';
+                    if (mensajeError === "Method Not Allowed") {
+                        mensajeError = "Método de comunicación denegado. Intente nuevamente.";
+                    }
+
                     Swal.fire({
                         icon: 'error',
                         title: 'Atención',
-                        text: err.detail || 'Operación denegada.',
+                        text: mensajeError,
                         confirmButtonColor: '#ef4444'
                     });
 
@@ -441,7 +451,6 @@
 
         async function cargarUltimos() {
             try {
-                // SE REMUEVE solo_hoy=true PARA MOSTRAR TODOS LOS TICKETS HISTÓRICOS Y PENDIENTES
                 const res = await fetch('/api/salidas/?page=1&limit=20', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
