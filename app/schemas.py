@@ -41,10 +41,17 @@ class SalidaBase(BaseModel):
 class SalidaCreate(SalidaBase):
     pass
 
+class ConciliacionRequest(BaseModel):
+    num_recibo: str
+    almacen_destino: Optional[str] = "ALM01"
+
 class SalidaResponse(SalidaBase):
     id: int
     fecha_hora: datetime
     usuario_id: int
+    recibido_almacen: bool = False
+    fecha_hora_recepcion: Optional[datetime] = None
+    usuario_recepcion_id: Optional[int] = None
 
     class Config:
         from_attributes = True

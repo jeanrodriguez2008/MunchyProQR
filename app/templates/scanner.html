@@ -269,7 +269,7 @@
         }
 
         function confirmarConciliacionAlmacen(datos) {
-            const ticketNumero = datos.num_recibo || datos;
+            const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
             Swal.fire({
                 title: '¿Deseas conciliar este ticket?',
                 html: `
@@ -362,15 +362,10 @@
                     cargarUltimos();
                 } else {
                     const err = await response.json();
-                    let mensajeError = err.detail || "Ocurrió un problema al procesar el registro.";
-                    if (mensajeError === "Method Not Allowed") {
-                        mensajeError = "Método de envío no permitido en el servidor.";
-                    }
-
                     Swal.fire({
                         icon: 'error',
                         title: 'Atención',
-                        text: mensajeError,
+                        text: err.detail || "Ocurrió un problema al procesar el registro.",
                         confirmButtonColor: '#ef4444'
                     });
 
@@ -398,11 +393,16 @@
             btn.innerText = "⏳ Conciliando en Almacén...";
 
             try {
-                const response = await fetch(`/api/salidas/conciliar?num_recibo=${encodeURIComponent(numRecibo)}&almacen_destino=ALM01`, {
+                const response = await fetch('/api/salidas/conciliar', {
                     method: 'POST',
                     headers: {
+                        'Content-Type': 'application/json',
                         'Authorization': `Bearer ${token}`
-                    }
+                    },
+                    body: JSON.stringify({
+                        num_recibo: String(numRecibo),
+                        almacen_destino: "ALM01"
+                    })
                 });
 
                 if (response.ok) {
@@ -423,15 +423,11 @@
                     cargarUltimos();
                 } else {
                     const err = await response.json();
-                    let mensajeError = err.detail || 'Operación denegada.';
-                    if (mensajeError === "Method Not Allowed") {
-                        mensajeError = "Método de comunicación denegado en el servidor.";
-                    }
 
                     Swal.fire({
                         icon: 'error',
                         title: 'Atención',
-                        text: mensajeError,
+                        text: err.detail || 'Operación denegada.',
                         confirmButtonColor: '#ef4444'
                     });
 

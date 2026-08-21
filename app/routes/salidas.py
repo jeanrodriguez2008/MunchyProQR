@@ -1,6 +1,7 @@
 import io
 import os
 import openpyxl
+import httpx
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -8,7 +9,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, date
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -24,6 +25,8 @@ router = APIRouter(
     prefix="/api/salidas",
     tags=["Salidas de Producción"]
 )
+
+URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguardpt.onrender.com/api/v1/conciliacion/munchyproqr")
 
 
 @router.post("/registrar", response_model=schemas.SalidaResponse)
@@ -41,7 +44,7 @@ def registrar_salida_qr(
         if ticket_existente:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"El número de ticket '{num_ticket}' ya fue registrado previamente."
+                detail=f"⛔ El ticket N° '{num_ticket}' ya fue registrado previamente en el sistema."
             )
 
     try:
@@ -57,8 +60,9 @@ def registrar_salida_qr(
             grupo=str(salida_data.grupo) if salida_data.grupo else None,
             fecha_recibo=str(salida_data.fecha_recibo) if salida_data.fecha_recibo else None,
             fecha_contabilizacion=str(salida_data.fecha_contabilizacion) if salida_data.fecha_contabilizacion else None,
-            num_op=str(salida_data.num_op) if salida_data.num_op else None,
-            usuario_id=usuario_actual.id
+            num_op=str(salida_data.num_op).strip() if salida_data.num_op else None,
+            usuario_id=usuario_actual.id,
+            recibido_almacen=False
         )
         
         db.add(nueva_salida)
@@ -73,20 +77,166 @@ def registrar_salida_qr(
         )
 
 
-@router.get("/", response_model=List[schemas.SalidaResponse])
-def listar_salidas(
-    fecha: Optional[date] = Query(None, description="Filtrar por fecha (YYYY-MM-DD)"),
-    articulo: Optional[str] = Query(None, description="Filtrar por descripción"),
+@router.post("/conciliar", response_model=schemas.SalidaResponse)
+async def conciliar_entrada_almacen(
+    datos: schemas.ConciliacionRequest,
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(auth.requiere_analista_o_coordinador)
+    usuario_actual: models.Usuario = Depends(auth.requiere_almacenista_o_superior)
 ):
-    query = db.query(models.SalidaProduccion)
-    if fecha:
-        query = query.filter(func.date(models.SalidaProduccion.fecha_hora) == fecha)
-    if articulo:
-        query = query.filter(models.SalidaProduccion.descripcion.ilike(f"%{articulo}%"))
+    ticket = db.query(models.SalidaProduccion).filter(
+        models.SalidaProduccion.num_recibo == datos.num_recibo.strip()
+    ).first()
+
+    if not ticket:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
+        )
+
+    if getattr(ticket, 'recibido_almacen', False):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
+        )
+
+    setattr(ticket, 'recibido_almacen', True)
+    setattr(ticket, 'fecha_hora_recepcion', datetime.now())
+    setattr(ticket, 'usuario_recepcion_id', usuario_actual.id)
+
+    db.commit()
+    db.refresh(ticket)
+
+    payload_guard = {
+        "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
+        "numero_lote": str(ticket.lote or "").strip().upper(),
+        "fecha_vencimiento": str(ticket.fecha_vencimiento or "").strip(),
+        "cantidad": int(ticket.cantidad or 1),
+        "almacen_destino": str(datos.almacen_destino or "ALM01").strip().upper(),
+        "referencia_documento": str(ticket.num_recibo or "PRO-QR").strip().upper(),
+        "usuario": str(usuario_actual.username).strip()
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(URL_MUNCHYGUARD_PT, json=payload_guard)
+            if response.status_code != 200:
+                print(f"⚠️ Alerta MunchyGuardPT: {response.text}")
+    except Exception as err_api:
+        print(f"❌ Error de conexión al notificar a MunchyGuardPT: {str(err_api)}")
+
+    return ticket
+
+
+@router.get("/")
+def listar_salidas(
+    page: int = Query(1, ge=1, description="Número de página"),
+    limit: int = Query(50, ge=1, le=200, description="Registros por página"),
+    solo_hoy: bool = Query(False, description="Filtrar solo los registros del día de hoy"),
+    db: Session = Depends(get_db),
+    usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
+):
+    try:
+        offset = (page - 1) * limit
+        query = db.query(models.SalidaProduccion)
+
+        if solo_hoy:
+            hoy = date.today()
+            query = query.filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)
+
+        total_registros = query.count()
+        registros = (
+            query.order_by(models.SalidaProduccion.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        respuesta_data = []
+        for s in registros:
+            recibido = getattr(s, 'recibido_almacen', False)
+            f_recepcion = getattr(s, 'fecha_hora_recepcion', None)
+            u_recepcion = getattr(s, 'usuario_recepcion', None)
+
+            respuesta_data.append({
+                "id": s.id,
+                "codigo_articulo": s.codigo_articulo,
+                "descripcion": s.descripcion,
+                "lote": s.lote,
+                "fecha_vencimiento": s.fecha_vencimiento,
+                "cantidad": s.cantidad,
+                "num_recibo": s.num_recibo,
+                "turno": s.turno,
+                "grupo": s.grupo,
+                "fecha_recibo": s.fecha_recibo,
+                "fecha_contabilizacion": s.fecha_contabilizacion,
+                "num_op": s.num_op,
+                "fecha_hora": s.fecha_hora.strftime("%d/%m/%Y %I:%M:%S %p") if s.fecha_hora else None,
+                "recibido_almacen": recibido if recibido is not None else False,
+                "fecha_hora_recepcion": f_recepcion.strftime("%d/%m/%Y %I:%M:%S %p") if f_recepcion else None,
+                "usuario_recepcion": u_recepcion.username if u_recepcion else None
+            })
+
+        return {
+            "total": total_registros,
+            "page": page,
+            "limit": limit,
+            "total_pages": (total_registros + limit - 1) // limit if total_registros > 0 else 1,
+            "data": respuesta_data
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al obtener lista de salidas: {str(e)}"
+        )
+
+
+@router.delete("/vaciar-hoy", status_code=status.HTTP_200_OK)
+def vaciar_produccion_diaria(
+    db: Session = Depends(get_db),
+    usuario_coordinador: models.Usuario = Depends(auth.requiere_coordinador)
+):
+    try:
+        hoy = date.today()
+        registros_hoy = db.query(models.SalidaProduccion).filter(
+            func.date(models.SalidaProduccion.fecha_hora) == hoy
+        ).all()
+
+        if not registros_hoy:
+            raise HTTPException(
+                status_code=404, 
+                detail="No hay registros de producción de hoy para eliminar."
+            )
+
+        cantidad_eliminada = len(registros_hoy)
+        for reg in registros_hoy:
+            db.delete(reg)
         
-    return query.order_by(models.SalidaProduccion.fecha_hora.desc()).all()
+        db.commit()
+
+        return {
+            "message": f"Se eliminaron exitosamente {cantidad_eliminada} registros de la producción de hoy.",
+            "registros_eliminados": cantidad_eliminada
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/vaciar-todo", status_code=status.HTTP_200_OK)
+def vaciar_toda_la_produccion(
+    db: Session = Depends(get_db),
+    usuario_coordinador: models.Usuario = Depends(auth.requiere_coordinador)
+):
+    try:
+        total = db.query(models.SalidaProduccion).delete()
+        db.commit()
+        return {
+            "message": f"Se ha eliminado exitosamente TODA la producción registrada ({total} registros). La base de datos está completamente limpia.",
+            "registros_eliminados": total
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/{salida_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -107,11 +257,15 @@ def eliminar_salida(
 @router.get("/dashboard/kpis")
 def obtener_kpis_dashboard(
     db: Session = Depends(get_db),
-    usuario_coordinador: models.Usuario = Depends(auth.requiere_coordinador)
+    usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
     hoy = date.today()
+    
     total_hoy = db.query(func.sum(models.SalidaProduccion.cantidad))\
-                  .filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)\
+                  .filter(
+                      func.date(models.SalidaProduccion.fecha_hora) == hoy,
+                      models.SalidaProduccion.recibido_almacen == True
+                  )\
                   .scalar() or 0
 
     totales_por_sku = db.query(
@@ -119,7 +273,10 @@ def obtener_kpis_dashboard(
                           models.SalidaProduccion.descripcion,
                           func.sum(models.SalidaProduccion.cantidad).label("total")
                       )\
-                      .filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)\
+                      .filter(
+                          func.date(models.SalidaProduccion.fecha_hora) == hoy,
+                          models.SalidaProduccion.recibido_almacen == True
+                      )\
                       .group_by(models.SalidaProduccion.codigo_articulo, models.SalidaProduccion.descripcion)\
                       .order_by(func.sum(models.SalidaProduccion.cantidad).desc())\
                       .all()
@@ -128,7 +285,10 @@ def obtener_kpis_dashboard(
                             models.SalidaProduccion.grupo,
                             func.sum(models.SalidaProduccion.cantidad).label("total")
                         )\
-                        .filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)\
+                        .filter(
+                            func.date(models.SalidaProduccion.fecha_hora) == hoy,
+                            models.SalidaProduccion.recibido_almacen == True
+                        )\
                         .group_by(models.SalidaProduccion.grupo)\
                         .order_by(func.sum(models.SalidaProduccion.cantidad).desc())\
                         .all()
@@ -154,19 +314,31 @@ def obtener_kpis_dashboard(
 
 @router.get("/exportar-excel")
 def exportar_excel(
+    fecha_inicio: Optional[date] = Query(None, description="Fecha de inicio opcional (YYYY-MM-DD)"),
+    fecha_fin: Optional[date] = Query(None, description="Fecha de fin opcional (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    usuario_coordinador: models.Usuario = Depends(auth.requiere_coordinador)
+    usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
-    salidas = db.query(models.SalidaProduccion).order_by(models.SalidaProduccion.fecha_hora.desc()).all()
+    query = db.query(models.SalidaProduccion)
+
+    if fecha_inicio and fecha_fin:
+        query = query.filter(
+            func.date(models.SalidaProduccion.fecha_hora) >= fecha_inicio,
+            func.date(models.SalidaProduccion.fecha_hora) <= fecha_fin
+        )
+
+    salidas = query.order_by(models.SalidaProduccion.id.desc()).all()
+
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Salidas QR Munchy"
+    ws.title = "Salidas y Entradas QR"
 
     encabezados = [
         "ID", "Código del Artículo", "Descripción", "Lote", "Fecha de Vencimiento",
         "Cantidad (und)", "Número de Ticket (recibo)", "Turno", "Grupo",
         "Fecha de Recibo", "Unidad de Medida", "Número de OP",
-        "Contenido QR Bruto", "Fecha/Hora Escaneo", "Usuario Escáner"
+        "Fecha/Hora Escaneo Salida", "Usuario Salida",
+        "Estado Almacén", "Fecha/Hora Recepción Almacén", "Usuario Almacén"
     ]
     ws.append(encabezados)
 
@@ -176,6 +348,18 @@ def exportar_excel(
 
     for s in salidas:
         nombre_usuario = s.usuario.username if s.usuario else "Desconocido"
+        
+        u_rec = getattr(s, 'usuario_recepcion', None)
+        nombre_almacenista = u_rec.username if u_rec else "N/A"
+        
+        recibido = getattr(s, 'recibido_almacen', False)
+        estado_almacen = "CONCILIADO" if recibido else "PENDIENTE"
+
+        f_rec = getattr(s, 'fecha_hora_recepcion', None)
+
+        f_escaneo_str = s.fecha_hora.strftime("%d/%m/%Y %I:%M:%S %p") if s.fecha_hora else "N/A"
+        f_recepcion_str = f_rec.strftime("%d/%m/%Y %I:%M:%S %p") if f_rec else "N/A"
+
         ws.append([
             s.id,
             s.codigo_articulo or "N/A",
@@ -189,28 +373,32 @@ def exportar_excel(
             s.fecha_recibo or "N/A",
             s.fecha_contabilizacion or "UND",
             s.num_op or "N/A",
-            s.codigo_qr,
-            s.fecha_hora.strftime("%Y-%m-%d %H:%M:%S"),
-            nombre_usuario
+            f_escaneo_str,
+            nombre_usuario,
+            estado_almacen,
+            f_recepcion_str,
+            nombre_almacenista
         ])
 
-    nombre_archivo = f"Respaldo_Salidas_Munchy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-    wb.save(nombre_archivo)
+    excel_buf = io.BytesIO()
+    wb.save(excel_buf)
+    excel_buf.seek(0)
 
-    return FileResponse(
-        path=nombre_archivo,
-        filename=nombre_archivo,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    nombre_archivo = f"Respaldo_Salidas_Almacen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+
+    return StreamingResponse(
+        excel_buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={nombre_archivo}"}
     )
 
 
-# --- REPORTE PDF CON LOGO, GRÁFICOS, RESUMEN DE PRODUCCIÓN Y TOTAL GENERAL ---
 @router.get("/reporte-pdf")
 def generar_reporte_pdf(
     fecha_inicio: date = Query(..., description="Fecha de inicio (YYYY-MM-DD)"),
     fecha_fin: date = Query(..., description="Fecha de fin (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(auth.requiere_analista_o_coordinador)
+    usuario_actual: models.Usuario = Depends(auth.requiere_coordinador)
 ):
     query = db.query(models.SalidaProduccion).filter(
         func.date(models.SalidaProduccion.fecha_hora) >= fecha_inicio,
@@ -239,7 +427,6 @@ def generar_reporte_pdf(
 
     sku_lider = max(dict_sku.items(), key=lambda x: x[1]) if dict_sku else (("N/A", "N/A"), 0)
 
-    # 1. Gráficos en memoria
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
     
     labels_sku = [k[0] for k in dict_sku.keys()]
@@ -260,7 +447,6 @@ def generar_reporte_pdf(
     img_buf.seek(0)
     plt.close()
 
-    # 2. Generar PDF
     pdf_buf = io.BytesIO()
     doc = SimpleDocTemplate(pdf_buf, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     styles = getSampleStyleSheet()
@@ -271,7 +457,6 @@ def generar_reporte_pdf(
 
     elementos = []
 
-    # Insertar Logo en el PDF si existe
     ruta_logo = os.path.join("app", "static", "img", "logo.png")
     if os.path.exists(ruta_logo):
         elementos.append(Image(ruta_logo, width=120, height=45))
@@ -304,7 +489,6 @@ def generar_reporte_pdf(
         turno_str = ejemplo.turno if ejemplo and ejemplo.turno else "N/A"
         tabla_datos.append([sku, desc[:35], grupo_str, turno_str, f"{cant:,.0f}".replace(',', '.')])
 
-    # Fila final con la sumatoria del Total General
     tabla_datos.append(["TOTAL GENERAL", "", "", "", f"{total_unidades:,.0f}".replace(',', '.')])
 
     t = Table(tabla_datos, colWidths=[80, 220, 60, 60, 80])
@@ -319,7 +503,6 @@ def generar_reporte_pdf(
         ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('ALIGN', (4, 0), (4, -1), 'RIGHT'),
         
-        # Estilos aplicados a la fila de TOTAL GENERAL
         ('SPAN', (0, -1), (3, -1)),
         ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#10B981")),
         ('TEXTCOLOR', (0, -1), (-1, -1), colors.whitesmoke),
