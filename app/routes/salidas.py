@@ -32,10 +32,14 @@ URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguardpt.onre
 
 async def notificar_munchyguard_async(payload: dict):
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
-            await client.post(URL_MUNCHYGUARD_PT, json=payload)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            res = await client.post(URL_MUNCHYGUARD_PT, json=payload)
+            if res.status_code == 200:
+                print(f"✅ Notificación MunchyGuardPT exitosa: {res.json()}")
+            else:
+                print(f"⚠️ MunchyGuardPT respondió con código {res.status_code}: {res.text}")
     except Exception as err:
-        print(f"⚠️ Alerta MunchyGuardPT: {str(err)}")
+        print(f"⚠️ Alerta MunchyGuardPT Error de Conexión: {str(err)}")
 
 
 @router.post("/registrar", response_model=schemas.SalidaResponse)
@@ -143,12 +147,14 @@ async def conciliar_entrada_almacen(
 
         db.commit()
 
+        # REGLAS RECEPTORAS POR DEFECTO A MUNCHYGUARD PT: Gal-Morita -> Gal-MORII
         payload_guard = {
             "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
-            "numero_lote": str(ticket.lote or "").strip().upper(),
+            "numero_lote": str(ticket.lote or "SIN LOTE").strip().upper(),
             "fecha_vencimiento": str(ticket.fecha_vencimiento or "").strip(),
             "cantidad": int(ticket.cantidad or 1),
-            "almacen_destino": str(datos.almacen_destino or "ALM01").strip().upper(),
+            "almacen_origen": "Gal-Morita",
+            "almacen_destino": str(datos.almacen_destino or "Gal-MORII").strip().upper(),
             "referencia_documento": str(ticket.num_recibo or "PRO-QR").strip().upper(),
             "usuario": str(usuario_actual.username).strip()
         }
