@@ -146,6 +146,7 @@
     <script>
         const token = localStorage.getItem('token');
         const rol = (localStorage.getItem('rol') || 'analista').toLowerCase();
+        let salidasCache = [];
 
         document.getElementById('subtituloRol').innerText = `MunchyProQR - Modo: ${rol.toUpperCase()}`;
 
@@ -270,6 +271,19 @@
 
         function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
+
+            // VALIDAR SI EL TICKET YA FUE CONCILIADO EN LA CACHE LOCAL
+            const ticketExistente = salidasCache.find(s => String(s.num_recibo).strip() === String(ticketNumero).strip());
+            if (ticketExistente && ticketExistente.recibido_almacen) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Ticket Ya Conciliado',
+                    text: `El ticket N° '${ticketNumero}' ya fue concilidad e ingresado al almacén previamente.`,
+                    confirmButtonColor: '#d97706'
+                });
+                return;
+            }
+
             Swal.fire({
                 title: '¿Deseas conciliar este ticket?',
                 html: `
@@ -308,7 +322,12 @@
             }
 
             if (rol === 'almacenista') {
-                ejecutarConciliacionAlmacen(num_recibo);
+                confirmarConciliacionAlmacen({
+                    num_recibo: num_recibo,
+                    codigo_articulo: document.getElementById('codigo_articulo').value,
+                    descripcion: document.getElementById('descripcion').value,
+                    cantidad: document.getElementById('cantidad').value
+                });
             } else {
                 guardarSalidaAnalista();
             }
@@ -420,16 +439,15 @@
                     btn.innerText = "🔍 Conciliar Recepción en Almacén";
                     btn.className = "w-full bg-gray-300 text-gray-500 py-3 rounded-xl font-bold text-xs transition shadow-sm cursor-not-allowed flex items-center justify-center gap-1 mt-2";
 
-                    // RECARGAR RECIENTES TRAS CONCILIAR
                     await cargarUltimos();
                 } else {
                     const err = await response.json();
 
                     Swal.fire({
-                        icon: 'error',
+                        icon: 'warning',
                         title: 'Atención',
                         text: err.detail || 'Operación denegada.',
-                        confirmButtonColor: '#ef4444'
+                        confirmButtonColor: '#d97706'
                     });
 
                     btn.disabled = false;
@@ -458,15 +476,15 @@
 
                 if (res.ok) {
                     const data = await res.json();
-                    const salidas = Array.isArray(data) ? data : (data.data || []);
+                    salidasCache = Array.isArray(data) ? data : (data.data || []);
 
                     const div = document.getElementById('listaUltimos');
-                    if (!salidas || salidas.length === 0) {
+                    if (!salidasCache || salidasCache.length === 0) {
                         div.innerHTML = `<p class="text-center py-2">No hay registros de salidas en el sistema.</p>`;
                         return;
                     }
 
-                    div.innerHTML = salidas.map(s => `
+                    div.innerHTML = salidasCache.map(s => `
                         <div class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
                             <div>
                                 <span class="font-bold text-gray-800 block">${s.descripcion}</span>
