@@ -127,14 +127,12 @@ async def conciliar_entrada_almacen(
                 detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
             )
 
-        # SI YA FUE CONCILIADO, BLOQUEAR DE INMEDIATO EN BACKEND
         if bool(getattr(ticket, 'recibido_almacen', False)) is True:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
             )
 
-        # 1. ACTUALIZACIÓN EXPLICITA EN BASE DE DATOS MEDIANTE UPDATE DIRECTO
         db.query(models.SalidaProduccion).filter(
             models.SalidaProduccion.id == ticket.id
         ).update({
@@ -145,7 +143,6 @@ async def conciliar_entrada_almacen(
 
         db.commit()
 
-        # 2. SEGUNDO PLANO
         payload_guard = {
             "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
             "numero_lote": str(ticket.lote or "").strip().upper(),
