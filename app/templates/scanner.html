@@ -135,10 +135,10 @@
         <!-- Listado de Escaneos Recientes -->
         <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
             <h2 class="text-xs font-bold text-gray-700 uppercase mb-3 flex items-center gap-1">
-                📋 ÚLTIMOS ESCANEOS DE HOY
+                📋 ÚLTIMOS TICKETS Y ESTADO DE RECEPCIÓN
             </h2>
             <div id="listaUltimos" class="space-y-2 text-xs text-gray-500">
-                <p class="text-center py-2">No has realizado escaneos aún hoy.</p>
+                <p class="text-center py-2">Cargando lista de tickets...</p>
             </div>
         </div>
     </div>
@@ -441,7 +441,8 @@
 
         async function cargarUltimos() {
             try {
-                const res = await fetch('/api/salidas/?page=1&limit=5&solo_hoy=true', {
+                // SE REMUEVE solo_hoy=true PARA MOSTRAR TODOS LOS TICKETS HISTÓRICOS Y PENDIENTES
+                const res = await fetch('/api/salidas/?page=1&limit=20', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -451,7 +452,7 @@
 
                     const div = document.getElementById('listaUltimos');
                     if (!salidas || salidas.length === 0) {
-                        div.innerHTML = `<p class="text-center py-2">No has realizado escaneos aún hoy.</p>`;
+                        div.innerHTML = `<p class="text-center py-2">No hay registros de salidas en el sistema.</p>`;
                         return;
                     }
 
@@ -459,7 +460,7 @@
                         <div class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
                             <div>
                                 <span class="font-bold text-gray-800 block">${s.descripcion}</span>
-                                <span class="text-[10px] text-gray-500">Ticket: ${s.num_recibo || 'N/A'} | OP: ${s.num_op || 'N/A'}</span>
+                                <span class="text-[10px] text-gray-500">Ticket: ${s.num_recibo || 'N/A'} | Fecha: ${s.fecha_hora || 'N/A'}</span>
                             </div>
                             <div>
                                 ${s.recibido_almacen 
