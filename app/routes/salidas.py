@@ -1,6 +1,5 @@
 import io
 import os
-import asyncio
 import openpyxl
 import httpx
 import matplotlib
@@ -28,18 +27,6 @@ router = APIRouter(
 )
 
 URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguardpt.onrender.com/api/v1/conciliacion/munchyproqr")
-
-
-async def notificar_munchyguard_async(payload: dict):
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            res = await client.post(URL_MUNCHYGUARD_PT, json=payload)
-            if res.status_code == 200:
-                print(f"✅ Notificación MunchyGuardPT exitosa: {res.json()}")
-            else:
-                print(f"⚠️ MunchyGuardPT respondió con código {res.status_code}: {res.text}")
-    except Exception as err:
-        print(f"⚠️ Alerta MunchyGuardPT Error de Conexión: {str(err)}")
 
 
 @router.post("/registrar", response_model=schemas.SalidaResponse)
@@ -128,7 +115,7 @@ async def conciliar_entrada_almacen(
         if not ticket:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
+                detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente."
             )
 
         if bool(getattr(ticket, 'recibido_almacen', False)) is True:
@@ -137,17 +124,6 @@ async def conciliar_entrada_almacen(
                 detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
             )
 
-        db.query(models.SalidaProduccion).filter(
-            models.SalidaProduccion.id == ticket.id
-        ).update({
-            "recibido_almacen": True,
-            "fecha_hora_recepcion": datetime.now(),
-            "usuario_recepcion_id": usuario_actual.id
-        }, synchronize_session='evaluate')
-
-        db.commit()
-
-        # REGLAS RECEPTORAS POR DEFECTO A MUNCHYGUARD PT: Gal-Morita -> Gal-MORII
         payload_guard = {
             "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
             "numero_lote": str(ticket.lote or "SIN LOTE").strip().upper(),
@@ -159,7 +135,32 @@ async def conciliar_entrada_almacen(
             "usuario": str(usuario_actual.username).strip()
         }
 
-        asyncio.create_task(notificar_munchyguard_async(payload_guard))
+        # VALIDACIÓN TRANSACCIONAL 1: Enviar al almacén destino primero
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(URL_MUNCHYGUARD_PT, json=payload_guard)
+                if res.status_code not in (200, 201):
+                    # Si falla, abortamos y le avisamos al almacenista
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, 
+                        detail=f"Rechazado por el KARDEX: {res.text}"
+                    )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
+                detail=f"Error de Conexión. No se alcanzó el servidor de KARDEX ({URL_MUNCHYGUARD_PT}). Verifica que esté encendido."
+            )
+
+        # VALIDACIÓN TRANSACCIONAL 2: Solo si responde exitosamente, cerramos la conciliación local
+        db.query(models.SalidaProduccion).filter(
+            models.SalidaProduccion.id == ticket.id
+        ).update({
+            "recibido_almacen": True,
+            "fecha_hora_recepcion": datetime.now(),
+            "usuario_recepcion_id": usuario_actual.id
+        }, synchronize_session='evaluate')
+
+        db.commit()
 
         return {
             "mensaje": "Conciliación exitosa",
