@@ -269,14 +269,15 @@
         }
 
         function confirmarConciliacionAlmacen(datos) {
+            const ticketNumero = datos.num_recibo || datos;
             Swal.fire({
                 title: '¿Deseas conciliar este ticket?',
                 html: `
                     <div class="text-left text-xs space-y-1 bg-gray-50 p-3 rounded-lg border my-2">
-                        <p><strong>N° Ticket:</strong> ${datos.num_recibo}</p>
-                        <p><strong>SKU:</strong> ${datos.codigo_articulo}</p>
-                        <p><strong>Descripción:</strong> ${datos.descripcion}</p>
-                        <p><strong>Cantidad:</strong> <span class="text-emerald-600 font-bold">${datos.cantidad} und.</span></p>
+                        <p><strong>N° Ticket:</strong> ${ticketNumero}</p>
+                        <p><strong>SKU:</strong> ${datos.codigo_articulo || 'N/A'}</p>
+                        <p><strong>Descripción:</strong> ${datos.descripcion || 'N/A'}</p>
+                        <p><strong>Cantidad:</strong> <span class="text-emerald-600 font-bold">${datos.cantidad || 1} und.</span></p>
                     </div>
                 `,
                 icon: 'question',
@@ -287,7 +288,7 @@
                 cancelButtonText: 'Cancelar'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    ejecutarConciliacionAlmacen(datos.num_recibo);
+                    ejecutarConciliacionAlmacen(ticketNumero);
                 }
             });
         }
@@ -296,14 +297,18 @@
             e.preventDefault();
             const num_recibo = document.getElementById('num_recibo').value;
 
+            if (!num_recibo) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Atención',
+                    text: 'Por favor escanea un código QR antes de procesar.',
+                    confirmButtonColor: '#2563eb'
+                });
+                return;
+            }
+
             if (rol === 'almacenista') {
-                const datos = {
-                    num_recibo: num_recibo,
-                    codigo_articulo: document.getElementById('codigo_articulo').value,
-                    descripcion: document.getElementById('descripcion').value,
-                    cantidad: document.getElementById('cantidad').value
-                };
-                confirmarConciliacionAlmacen(datos);
+                ejecutarConciliacionAlmacen(num_recibo);
             } else {
                 guardarSalidaAnalista();
             }
@@ -393,7 +398,6 @@
             btn.innerText = "⏳ Conciliando en Almacén...";
 
             try {
-                // ENVÍO EXPLÍCITO VÍA MÉTODO POST
                 const response = await fetch(`/api/salidas/conciliar?num_recibo=${encodeURIComponent(numRecibo)}&almacen_destino=ALM01`, {
                     method: 'POST',
                     headers: {
@@ -421,7 +425,7 @@
                     const err = await response.json();
                     let mensajeError = err.detail || 'Operación denegada.';
                     if (mensajeError === "Method Not Allowed") {
-                        mensajeError = "Método de comunicación denegado. Intente nuevamente.";
+                        mensajeError = "Método de comunicación denegado en el servidor.";
                     }
 
                     Swal.fire({
