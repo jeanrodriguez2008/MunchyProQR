@@ -1,5 +1,6 @@
 import io
 import os
+import asyncio
 import openpyxl
 import httpx
 import matplotlib
@@ -27,6 +28,15 @@ router = APIRouter(
 )
 
 URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguardpt.onrender.com/api/v1/conciliacion/munchyproqr")
+
+
+async def notificar_munchyguard_async(payload: dict):
+    """Notificación externa en segundo plano desacoplada del request web para evitar timeouts."""
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            await client.post(URL_MUNCHYGUARD_PT, json=payload)
+    except Exception as err:
+        print(f"⚠️ Alerta MunchyGuardPT (Segundo Plano): {str(err)}")
 
 
 @router.post("/registrar", response_model=schemas.SalidaResponse)
@@ -100,7 +110,7 @@ async def conciliar_entrada_almacen(
             detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
         )
 
-    # 1. ACTUALIZAR BD Y ASEGURAR PERSISTENCIA
+    # 1. GUARDAR Y CONFIRMAR EN BD LOCAL PRIMERO
     ticket.recibido_almacen = True
     ticket.fecha_hora_recepcion = datetime.now()
     ticket.usuario_recepcion_id = usuario_actual.id
@@ -116,7 +126,7 @@ async def conciliar_entrada_almacen(
             detail=f"Error al confirmar conciliación en BD: {str(err_db)}"
         )
 
-    # 2. NOTIFICACIÓN A MUNCHYGUARD PT EN SEGUNDO PLANO
+    # 2. DISPARAR LA NOTIFICACIÓN EXTERNA SIN ESPERAR RESPUESTA (BACKGROUND TASK)
     payload_guard = {
         "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
         "numero_lote": str(ticket.lote or "").strip().upper(),
@@ -127,11 +137,7 @@ async def conciliar_entrada_almacen(
         "usuario": str(usuario_actual.username).strip()
     }
 
-    try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
-            await client.post(URL_MUNCHYGUARD_PT, json=payload_guard)
-    except Exception as err_api:
-        print(f"⚠️ Alerta MunchyGuardPT: {str(err_api)}")
+    asyncio.create_task(notificar_munchyguard_async(payload_guard))
 
     return ticket
 
