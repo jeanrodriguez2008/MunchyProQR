@@ -146,7 +146,6 @@
     <script>
         const token = localStorage.getItem('token');
         const rol = (localStorage.getItem('rol') || 'analista').toLowerCase();
-        let salidasCache = [];
 
         document.getElementById('subtituloRol').innerText = `MunchyProQR - Modo: ${rol.toUpperCase()}`;
 
@@ -234,7 +233,7 @@
                                     confirmButtonColor: '#2563eb'
                                 });
                             }
-                        }, 100);
+                        }, 150);
                     } else {
                         Swal.fire({
                             icon: 'warning',
@@ -271,19 +270,29 @@
             }
         }
 
-        function confirmarConciliacionAlmacen(datos) {
+        async function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
-
-            if (ticketExistente && (ticketExistente.recibido_almacen === true || ticketExistente.recibido_almacen === "true")) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Ticket Ya Conciliado',
-                    text: `El ticket N° '${ticketNumero}' ya fue conciliado e ingresado al almacén previamente.`,
-                    confirmButtonColor: '#d97706'
+            // CONSULTA DIRECTA AL ENDPOINT DE VERIFICACIÓN EN BASE DE DATOS REAL
+            try {
+                const resVerif = await fetch(`/api/salidas/verificar/${encodeURIComponent(ticketNumero)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
                 });
-                return;
+
+                if (resVerif.ok) {
+                    const infoTicket = await resVerif.json();
+                    if (infoTicket.existe && infoTicket.recibido_almacen) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Ticket Ya Conciliado',
+                            text: `El ticket N° '${ticketNumero}' ya fue conciliado e ingresado al almacén previamente.`,
+                            confirmButtonColor: '#d97706'
+                        });
+                        return;
+                    }
+                }
+            } catch (errVerif) {
+                console.error("Error al verificar estado previo:", errVerif);
             }
 
             Swal.fire({
@@ -437,7 +446,6 @@
                     return;
                 }
 
-                // LECTURA SEGURA DE LA RESPUESTA EN FORMATO JSON
                 const data = await response.json();
 
                 if (response.ok) {
@@ -493,23 +501,22 @@
 
                 if (res.ok) {
                     const jsonRes = await res.json();
+                    let listaRegistros = [];
                     
                     if (Array.isArray(jsonRes)) {
-                        salidasCache = jsonRes;
+                        listaRegistros = jsonRes;
                     } else if (jsonRes && Array.isArray(jsonRes.data)) {
-                        salidasCache = jsonRes.data;
-                    } else {
-                        salidasCache = [];
+                        listaRegistros = jsonRes.data;
                     }
 
                     const div = document.getElementById('listaUltimos');
-                    if (!salidasCache || salidasCache.length === 0) {
+                    if (!listaRegistros || listaRegistros.length === 0) {
                         div.innerHTML = `<p class="text-center py-2">No hay registros de salidas en el sistema.</p>`;
                         return;
                     }
 
-                    div.innerHTML = salidasCache.map(s => {
-                        const estaConciliado = s.recibido_almacen === true || s.recibido_almacen === "true";
+                    div.innerHTML = listaRegistros.map(s => {
+                        const estaConciliado = s.recibido_almacen === true || String(s.recibido_almacen) === "true";
                         return `
                             <div class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center text-xs">
                                 <div>

@@ -86,6 +86,30 @@ def registrar_salida_qr(
         )
 
 
+@router.get("/verificar/{num_recibo}")
+def verificar_estado_ticket(
+    num_recibo: str,
+    db: Session = Depends(get_db),
+    usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
+):
+    """Endpoint directo para validar el estado de un ticket sin depender del caché local."""
+    num_ticket_limpio = num_recibo.strip()
+    ticket = db.query(models.SalidaProduccion).filter(
+        models.SalidaProduccion.num_recibo == num_ticket_limpio
+    ).first()
+
+    if not ticket:
+        return {"existe": False, "recibido_almacen": False}
+
+    recibido = bool(getattr(ticket, 'recibido_almacen', False))
+    return {
+        "existe": True,
+        "id": ticket.id,
+        "num_recibo": ticket.num_recibo,
+        "recibido_almacen": recibido
+    }
+
+
 @router.post("/conciliar", response_model=schemas.SalidaResponse)
 async def conciliar_entrada_almacen(
     datos: schemas.ConciliacionRequest,
@@ -104,14 +128,14 @@ async def conciliar_entrada_almacen(
                 detail=f"⛔ Operación denegada: El ticket N° '{datos.num_recibo}' NO ha sido registrado previamente por el Analista de Producción."
             )
 
-        # VALIDACIÓN TOLERANTE A NULL / NONE EN BD
-        if getattr(ticket, 'recibido_almacen', False) is True:
+        # VALIDACIÓN STRICTA Y DIRECTA EN BASE DE DATOS
+        if bool(getattr(ticket, 'recibido_almacen', False)) is True:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"⚠️ El ticket N° '{datos.num_recibo}' ya fue conciliado e ingresado al almacén previamente."
             )
 
-        # 1. ACTUALIZAR CAMPOS CON ASIGNACIÓN SEGURA
+        # 1. ACTUALIZAR CAMPOS
         ticket.recibido_almacen = True
         
         if hasattr(ticket, 'fecha_hora_recepcion'):
