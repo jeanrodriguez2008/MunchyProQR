@@ -272,13 +272,13 @@
         function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // VALIDAR SI EL TICKET YA FUE CONCILIADO EN LA CACHE LOCAL
-            const ticketExistente = salidasCache.find(s => String(s.num_recibo).strip() === String(ticketNumero).strip());
+            // VALIDAR SI EL TICKET YA FUE CONCILIADO USANDO .trim() EN JS
+            const ticketExistente = salidasCache.find(s => String(s.num_recibo).trim() === String(ticketNumero).trim());
             if (ticketExistente && ticketExistente.recibido_almacen) {
                 Swal.fire({
                     icon: 'warning',
                     title: 'Ticket Ya Conciliado',
-                    text: `El ticket N° '${ticketNumero}' ya fue concilidad e ingresado al almacén previamente.`,
+                    text: `El ticket N° '${ticketNumero}' ya fue conciliado e ingresado al almacén previamente.`,
                     confirmButtonColor: '#d97706'
                 });
                 return;
@@ -470,7 +470,7 @@
 
         async function cargarUltimos() {
             try {
-                const res = await fetch('/api/salidas/?page=1&limit=20', {
+                const res = await fetch('/api/salidas/?page=1&limit=50', {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 

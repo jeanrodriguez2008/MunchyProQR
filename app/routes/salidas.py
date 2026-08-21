@@ -115,7 +115,7 @@ async def conciliar_entrada_almacen(
             detail=f"Error al confirmar conciliación en BD: {str(err_db)}"
         )
 
-    # 2. NOTIFICAR A MUNCHYGUARD PT EN SEGUNDO PLANO SIN AFECTAR EL COMMIT LOCAL
+    # 2. NOTIFICAR A MUNCHYGUARD PT EN SEGUNDO PLANO
     payload_guard = {
         "codigo_producto": str(ticket.codigo_articulo or "").strip().upper(),
         "numero_lote": str(ticket.lote or "").strip().upper(),
@@ -179,7 +179,7 @@ def listar_salidas(
                 "fecha_contabilizacion": s.fecha_contabilizacion,
                 "num_op": s.num_op,
                 "fecha_hora": s.fecha_hora.strftime("%d/%m/%Y %I:%M:%S %p") if s.fecha_hora else None,
-                "recibido_almacen": recibido if recibido is not None else False,
+                "recibido_almacen": bool(recibido),
                 "fecha_hora_recepcion": f_recepcion.strftime("%d/%m/%Y %I:%M:%S %p") if f_recepcion else None,
                 "usuario_recepcion": u_recepcion.username if u_recepcion else None
             })
