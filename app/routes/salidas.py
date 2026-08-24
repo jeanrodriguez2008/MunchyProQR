@@ -26,7 +26,7 @@ router = APIRouter(
     tags=["Salidas de Producción"]
 )
 
-URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguardpt.onrender.com/api/v1/conciliacion/munchyproqr")
+URL_MUNCHYGUARD_PT = os.getenv("URL_MUNCHYGUARD_PT", "https://munchyguard.onrender.com/api/v1/conciliacion/munchyproqr")
 
 
 @router.post("/registrar", response_model=schemas.SalidaResponse)
@@ -99,7 +99,6 @@ def verificar_estado_ticket(
         "recibido_almacen": recibido
     }
 
-
 @router.post("/conciliar")
 async def conciliar_entrada_almacen(
     datos: schemas.ConciliacionRequest,
@@ -135,12 +134,25 @@ async def conciliar_entrada_almacen(
             "usuario": str(usuario_actual.username).strip()
         }
 
-        # VALIDACIÓN TRANSACCIONAL 1: Enviar al almacén destino primero
+        # ENCABEZADOS ESPECIALES PARA EVITAR BLOQUEOS DE RENDER (TOO MANY REQUESTS)
+        headers = {
+            "User-Agent": "MunchyProQR-Internal-Sync/2.0",
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+
+        # ENVÍO CON MANEJO DE RETRY
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                res = await client.post(URL_MUNCHYGUARD_PT, json=payload_guard)
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                res = await client.post(URL_MUNCHYGUARD_PT, json=payload_guard, headers=headers)
+                
+                if res.status_code == 429:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Servidor ocupado. Por favor espera 30 segundos y vuelve a presionar Conciliar."
+                    )
+                
                 if res.status_code not in (200, 201):
-                    # Si falla, abortamos y le avisamos al almacenista
                     raise HTTPException(
                         status_code=status.HTTP_400_BAD_REQUEST, 
                         detail=f"Rechazado por el KARDEX: {res.text}"
@@ -148,10 +160,10 @@ async def conciliar_entrada_almacen(
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
-                detail=f"Error de Conexión. No se alcanzó el servidor de KARDEX ({URL_MUNCHYGUARD_PT}). Verifica que esté encendido."
+                detail=f"Error de Conexión. No se alcanzó el KARDEX ({URL_MUNCHYGUARD_PT})."
             )
 
-        # VALIDACIÓN TRANSACCIONAL 2: Solo si responde exitosamente, cerramos la conciliación local
+        # SI SE GUARDA EN KARDEX, ACTUALIZAMOS EL ESTADO LOCAL
         db.query(models.SalidaProduccion).filter(
             models.SalidaProduccion.id == ticket.id
         ).update({
