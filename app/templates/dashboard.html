@@ -83,7 +83,7 @@
                 </div>
                 <div class="mt-3">
                     <p id="kpiTotal" class="text-3xl md:text-4xl font-black text-gray-800">0</p>
-                    <span class="text-xs text-green-600 font-bold">Unidades Conciliadas</span>
+                    <span class="text-xs text-blue-600 font-bold">Unidades Totales Registradas</span>
                 </div>
             </div>
 
@@ -157,12 +157,10 @@
         let totalPages = 1;
         const limitPerPage = 50;
 
-        // Asignar fechas iniciales (Hoy por defecto)
         const hoyStr = new Date().toISOString().slice(0, 10);
         if (document.getElementById('fecha_desde')) document.getElementById('fecha_desde').value = hoyStr;
         if (document.getElementById('fecha_hasta')) document.getElementById('fecha_hasta').value = hoyStr;
 
-        // Ocultar botón PDF para analistas
         if (rol === 'analista') {
             document.getElementById('bloqueReportePDF')?.classList.add('hidden');
         }
@@ -250,7 +248,7 @@
             const desde = document.getElementById('fecha_desde')?.value || '';
             const hasta = document.getElementById('fecha_hasta')?.value || '';
 
-            // 1. CARGA DE KPIS CON FILTRO DE FECHAS
+            // 1. CARGA DE KPIS
             try {
                 let urlKpis = '/api/salidas/dashboard/kpis';
                 if (desde && hasta) {
@@ -304,7 +302,7 @@
                 mostrarNotificacion("Error al conectar con los indicadores KPI", true);
             }
 
-            // 2. OBTENER SALIDAS FILTRADAS POR RANGO DE FECHAS
+            // 2. TABLA DE SALIDAS
             try {
                 let urlSalidas = `/api/salidas/?page=${currentPage}&limit=${limitPerPage}`;
                 if (desde && hasta) {
