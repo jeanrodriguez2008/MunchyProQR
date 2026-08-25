@@ -73,7 +73,7 @@
             </div>
         </div>
 
-        <!-- KPI Cards VISIBLES PARA TODOS LOS ROLES -->
+        <!-- KPI Cards VISIBLES PARA TODOS ROLES -->
         <div id="seccionKPIS" class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-l-4 border-blue-500 flex flex-col justify-between">
                 <div>
@@ -83,7 +83,7 @@
                 </div>
                 <div class="mt-3">
                     <p id="kpiTotal" class="text-3xl md:text-4xl font-black text-gray-800">0</p>
-                    <span class="text-xs text-blue-600 font-bold">Unidades Totales Registradas</span>
+                    <span class="text-xs text-green-600 font-bold">Unidades Conciliadas</span>
                 </div>
             </div>
 
@@ -280,7 +280,7 @@
                             </div>
                         `).join('');
                     } else {
-                        divGrupos.innerHTML = `<p class="text-xs text-gray-400">Sin datos de grupos en el rango...</p>`;
+                        divGrupos.innerHTML = `<p class="text-xs text-gray-400">Sin datos de grupos conciliados...</p>`;
                     }
 
                     const divSku = document.getElementById('kpiSkuList');
@@ -295,7 +295,7 @@
                             </div>
                         `).join('');
                     } else {
-                        divSku.innerHTML = `<p class="text-xs text-gray-400">Sin datos de SKU en el rango...</p>`;
+                        divSku.innerHTML = `<p class="text-xs text-gray-400">Sin datos de SKU conciliados...</p>`;
                     }
                 }
             } catch (err) {
