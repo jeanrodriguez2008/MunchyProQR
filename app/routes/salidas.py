@@ -489,7 +489,7 @@ def generar_reporte_pdf(
     fecha_inicio: date = Query(..., description="Fecha de inicio (YYYY-MM-DD)"),
     fecha_fin: date = Query(..., description="Fecha de fin (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
-    usuario_actual: models.Usuario = Depends(auth.requiere_coordinador)
+    usuario_actual: models.Usuario = Depends(auth.requiere_consultor_o_superior)
 ):
     dt_inicio = datetime.combine(fecha_inicio, time.min)
     dt_fin = datetime.combine(fecha_fin, time.max)
