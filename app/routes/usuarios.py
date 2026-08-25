@@ -26,10 +26,10 @@ def cambiar_rol_usuario(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.requiere_webmaster)
 ):
-    if nuevo_rol.lower() not in ["analista", "coordinador", "webmaster"]:
+    if nuevo_rol.lower() not in ["analista", "almacenista", "coordinador", "webmaster", "consultor"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Rol no válido. Debe ser 'analista', 'coordinador' o 'webmaster'."
+            detail="Rol no válido. Debe ser 'analista', 'almacenista', 'coordinador', 'webmaster' o 'consultor'."
         )
 
     usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
