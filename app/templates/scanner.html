@@ -166,7 +166,6 @@
             const campos = limpio.split('|');
 
             if (campos.length >= 11) {
-                // PARSEO CORREGIDO SEGÚN LA ESTRUCTURA DEL QR DE ESCRITORIO
                 return {
                     codigo_qr: limpio,
                     codigo_articulo: campos[0]?.trim() || '',
@@ -179,7 +178,7 @@
                     grupo: campos[7]?.trim() || '',
                     fecha_recibo: campos[8]?.trim() || '',
                     fecha_contabilizacion: campos[9]?.trim() || '',
-                    num_op: campos[10]?.trim() || '' // AHORA RECIBE LOS 7 DÍGITOS DE LA OP
+                    num_op: campos[10]?.trim() || ''
                 };
             }
             return null;
@@ -295,14 +294,44 @@
                 console.error("Error al verificar estado previo:", errVerif);
             }
 
+            // EXTRAEMOS TODOS LOS VALORES DEL FORMULARIO PARA LA VERIFICACIÓN COMPLETA
+            const sku = datos.codigo_articulo || document.getElementById('codigo_articulo').value || 'N/A';
+            const desc = datos.descripcion || document.getElementById('descripcion').value || 'N/A';
+            const cant = datos.cantidad || document.getElementById('cantidad').value || 1;
+            const lote = datos.lote || document.getElementById('lote').value || 'N/A';
+            const fVenc = datos.fecha_vencimiento || document.getElementById('fecha_vencimiento').value || 'N/A';
+            const turno = datos.turno || document.getElementById('turno').value || 'N/A';
+            const grupo = datos.grupo || document.getElementById('grupo').value || 'N/A';
+            const fRecibo = datos.fecha_recibo || document.getElementById('fecha_recibo').value || 'N/A';
+            const fContab = datos.fecha_contabilizacion || document.getElementById('fecha_contabilizacion').value || 'N/A';
+            const numOP = datos.num_op || document.getElementById('num_op').value || 'N/A';
+
             Swal.fire({
                 title: '¿Deseas conciliar este ticket?',
                 html: `
-                    <div class="text-left text-xs space-y-1 bg-gray-50 p-3 rounded-lg border my-2">
-                        <p><strong>N° Ticket:</strong> ${ticketNumero}</p>
-                        <p><strong>SKU:</strong> ${datos.codigo_articulo || 'N/A'}</p>
-                        <p><strong>Descripción:</strong> ${datos.descripcion || 'N/A'}</p>
-                        <p><strong>Cantidad:</strong> <span class="text-emerald-600 font-bold">${datos.cantidad || 1} und.</span></p>
+                    <div class="text-left text-xs space-y-1.5 bg-gray-50 p-3 rounded-xl border border-gray-200 my-2">
+                        <div class="border-b pb-1">
+                            <p><strong>N° Ticket:</strong> <span class="text-gray-900 font-semibold">${ticketNumero}</span></p>
+                            <p><strong>Descripción:</strong> <span class="text-gray-900 font-bold block">${desc}</span></p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-x-2 gap-y-1 pt-1">
+                            <p><strong>SKU:</strong> <span class="text-blue-600 font-bold">${sku}</span></p>
+                            <p><strong>Cantidad:</strong> <span class="text-emerald-600 font-bold">${cant} und.</span></p>
+                            
+                            <p><strong>Lote:</strong> ${lote}</p>
+                            <p><strong>F. Vencimiento:</strong> ${fVenc}</p>
+                            
+                            <p><strong>Turno:</strong> ${turno}</p>
+                            <p><strong>Grupo:</strong> ${grupo}</p>
+                            
+                            <p><strong>F. Recibo:</strong> ${fRecibo}</p>
+                            <p><strong>F. Contab.:</strong> ${fContab}</p>
+                        </div>
+                        
+                        <div class="border-t pt-1 text-center">
+                            <p class="text-indigo-700 font-bold">N° OP: ${numOP}</p>
+                        </div>
                     </div>
                 `,
                 icon: 'question',
@@ -337,7 +366,14 @@
                     num_recibo: num_recibo,
                     codigo_articulo: document.getElementById('codigo_articulo').value,
                     descripcion: document.getElementById('descripcion').value,
-                    cantidad: document.getElementById('cantidad').value
+                    cantidad: document.getElementById('cantidad').value,
+                    lote: document.getElementById('lote').value,
+                    fecha_vencimiento: document.getElementById('fecha_vencimiento').value,
+                    turno: document.getElementById('turno').value,
+                    grupo: document.getElementById('grupo').value,
+                    fecha_recibo: document.getElementById('fecha_recibo').value,
+                    fecha_contabilizacion: document.getElementById('fecha_contabilizacion').value,
+                    num_op: document.getElementById('num_op').value
                 });
             } else {
                 guardarSalidaAnalista();
