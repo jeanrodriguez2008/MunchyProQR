@@ -21,6 +21,8 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from app.database import get_db
 from app import models, schemas, auth
 
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
 router = APIRouter(
     prefix="/api/salidas",
     tags=["Salidas de Producción"]
@@ -404,54 +406,74 @@ def exportar_excel(
 
     wb = openpyxl.Workbook()
     ws = wb.active
-    ws.title = "Salidas y Entradas QR"
+    ws.title = "Salidas QR"
 
+    # 1. ENCABEZADOS EXACTOS SEGÚN LA IMAGEN
     encabezados = [
-        "ID", "Código del Artículo", "Descripción", "Lote", "Fecha de Vencimiento",
-        "Cantidad (und)", "Número de Ticket (recibo)", "Turno", "Grupo",
-        "Fecha de Recibo", "Unidad de Medida", "Número de OP",
-        "Fecha/Hora Escaneo Salida", "Usuario Salida",
-        "Estado Almacén", "Fecha/Hora Recepción Almacén", "Usuario Almacén"
+        "N° TICKETS",
+        "FECHA",
+        "USUARIO",
+        "GRUPO",
+        "TURNO",
+        "CÓDIGO PRODUCTO",
+        "DESCRIPCIÓN",
+        "UNIDADES",
+        "FECHA DE VENCIMIENTO"
     ]
     ws.append(encabezados)
 
-    for col in range(1, len(encabezados) + 1):
-        cell = ws.cell(row=1, column=col)
-        cell.font = openpyxl.styles.Font(bold=True)
+    # 2. ESTILOS VISUALES DEL ENCABEZADO
+    fill_azul = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    font_blanca = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
+    
+    fill_blanco_usuario = PatternFill(start_color="FFFFFF", end_color="FFFFFF", fill_type="solid")
+    font_negra_usuario = Font(name="Calibri", size=11, bold=True, color="000000")
 
+    align_center = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    borde_fino = Border(
+        left=Side(style='thin', color='103050'),
+        right=Side(style='thin', color='103050'),
+        top=Side(style='thin', color='103050'),
+        bottom=Side(style='thin', color='103050')
+    )
+
+    ws.row_dimensions[1].height = 28
+
+    for col_idx, text in enumerate(encabezados, start=1):
+        cell = ws.cell(row=1, column=col_idx)
+        cell.alignment = align_center
+        cell.border = borde_fino
+        
+        # Resaltar estilo especial para la celda USUARIO
+        if text == "USUARIO":
+            cell.fill = fill_blanco_usuario
+            cell.font = font_negra_usuario
+        else:
+            cell.fill = fill_azul
+            cell.font = font_blanca
+
+    # 3. LLENADO DE REGISTROS ALINEADOS CON LAS NUEVAS COLUMNAS
     for s in salidas:
-        nombre_usuario = s.usuario.username if s.usuario else "Desconocido"
-        
-        u_rec = getattr(s, 'usuario_recepcion', None)
-        nombre_almacenista = u_rec.username if u_rec else "N/A"
-        
-        recibido = bool(getattr(s, 'recibido_almacen', False))
-        estado_almacen = "CONCILIADO" if recibido else "PENDIENTE"
-
-        f_rec = getattr(s, 'fecha_hora_recepcion', None)
-
+        nombre_usuario = s.usuario.username if s.usuario else "DESCONOCIDO"
         f_escaneo_str = s.fecha_hora.strftime("%d/%m/%Y %I:%M:%S %p") if s.fecha_hora else "N/A"
-        f_recepcion_str = f_rec.strftime("%d/%m/%Y %I:%M:%S %p") if f_rec else "N/A"
 
         ws.append([
-            s.id,
+            s.num_recibo or "N/A",
+            f_escaneo_str,
+            nombre_usuario.upper(),
+            s.grupo or "N/A",
+            s.turno or "N/A",
             s.codigo_articulo or "N/A",
             s.descripcion,
-            s.lote or "N/A",
-            s.fecha_vencimiento or "N/A",
             s.cantidad,
-            s.num_recibo or "N/A",
-            s.turno or "N/A",
-            s.grupo or "N/A",
-            s.fecha_recibo or "N/A",
-            s.fecha_contabilizacion or "UND",
-            s.num_op or "N/A",
-            f_escaneo_str,
-            nombre_usuario,
-            estado_almacen,
-            f_recepcion_str,
-            nombre_almacenista
+            s.fecha_vencimiento or "N/A"
         ])
+
+    # 4. AUTO-AJUSTE ANCHO DE COLUMNAS
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = openpyxl.utils.get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
 
     excel_buf = io.BytesIO()
     wb.save(excel_buf)
