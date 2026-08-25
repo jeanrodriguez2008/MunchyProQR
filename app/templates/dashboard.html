@@ -47,22 +47,29 @@
 
         <div id="bannerNotificacion" class="hidden p-4 rounded-xl font-medium text-sm shadow-sm transition-all duration-300"></div>
 
-        <div id="seccionPDF" class="bg-white rounded-xl shadow-sm p-4 md:p-6 border-l-4 border-indigo-600">
-            <h2 class="text-base md:text-lg font-bold text-gray-800 mb-1">📄 Generador de Informes de Producción en PDF</h2>
-            <p class="text-xs text-gray-500 mb-4">Selecciona un lapso de tiempo para generar el reporte con gráficos o exportar el Excel filtrado</p>
+        <div id="seccionFiltroFechas" class="bg-white rounded-xl shadow-sm p-4 md:p-6 border-l-4 border-indigo-600">
+            <h2 class="text-base md:text-lg font-bold text-gray-800 mb-1">🔍 Filtro de Producción y Generador de Informes</h2>
+            <p class="text-xs text-gray-500 mb-4">Selecciona un lapso de tiempo para actualizar los indicadores, filtrar la tabla y exportar datos exactos en PDF o Excel</p>
             
-            <div class="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
-                <div class="flex-1">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">Fecha Desde:</label>
                     <input type="date" id="fecha_desde" class="w-full p-2 border rounded-lg text-xs md:text-sm bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
-                <div class="flex-1">
+                <div>
                     <label class="block text-xs font-bold text-gray-600 mb-1">Fecha Hasta:</label>
                     <input type="date" id="fecha_hasta" class="w-full p-2 border rounded-lg text-xs md:text-sm bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
                 </div>
-                <button onclick="generarReportePDF()" class="bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-bold text-xs md:text-sm hover:bg-indigo-700 transition flex items-center justify-center gap-2">
-                    📄 Descargar Informe PDF
-                </button>
+                <div>
+                    <button onclick="aplicarFiltroFechas()" class="w-full bg-blue-600 text-white px-4 py-2.5 rounded-lg font-bold text-xs md:text-sm hover:bg-blue-700 transition flex items-center justify-center gap-2">
+                        🔍 Filtrar Dashboard
+                    </button>
+                </div>
+                <div id="bloqueReportePDF">
+                    <button onclick="generarReportePDF()" class="w-full bg-indigo-600 text-white px-4 py-2.5 rounded-lg font-bold text-xs md:text-sm hover:bg-indigo-700 transition flex items-center justify-center gap-2">
+                        📄 Descargar PDF
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -70,7 +77,7 @@
         <div id="seccionKPIS" class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-l-4 border-blue-500 flex flex-col justify-between">
                 <div>
-                    <span class="text-xs font-semibold uppercase px-2 py-1 bg-blue-100 text-blue-800 rounded-full">FECHA DE HOY</span>
+                    <span id="badgeRangoKpi" class="text-xs font-semibold uppercase px-2 py-1 bg-blue-100 text-blue-800 rounded-full">FECHA DE HOY</span>
                     <h2 id="kpiFecha" class="text-base md:text-lg font-bold text-gray-700 mt-2">--/--/----</h2>
                     <p class="text-xs text-gray-500 mt-1">Total Unidades Producidas:</p>
                 </div>
@@ -85,16 +92,16 @@
                     🏷️ PRODUCCIÓN POR GRUPO
                 </h2>
                 <div id="kpiGruposList" class="space-y-2 max-h-40 overflow-y-auto pr-1 text-xs md:text-sm text-gray-700">
-                    <p class="text-xs text-gray-400">Sin datos registrados hoy...</p>
+                    <p class="text-xs text-gray-400">Sin datos registrados...</p>
                 </div>
             </div>
 
             <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border-l-4 border-emerald-500">
                 <h2 class="text-xs md:text-sm font-bold text-gray-700 uppercase mb-3 flex items-center gap-1">
-                    📦 PRODUCCIÓN DIARIA POR SKU
+                    📦 PRODUCCIÓN POR SKU
                 </h2>
                 <div id="kpiSkuList" class="space-y-2 max-h-40 overflow-y-auto pr-1 text-xs md:text-sm text-gray-700">
-                    <p class="text-xs text-gray-400">Sin datos registrados hoy...</p>
+                    <p class="text-xs text-gray-400">Sin datos registrados...</p>
                 </div>
             </div>
         </div>
@@ -150,13 +157,14 @@
         let totalPages = 1;
         const limitPerPage = 50;
 
-        // Ocultar sección de informes PDF únicamente para el rol analista
+        // Asignar fechas iniciales (Hoy por defecto)
+        const hoyStr = new Date().toISOString().slice(0, 10);
+        if (document.getElementById('fecha_desde')) document.getElementById('fecha_desde').value = hoyStr;
+        if (document.getElementById('fecha_hasta')) document.getElementById('fecha_hasta').value = hoyStr;
+
+        // Ocultar botón PDF para analistas
         if (rol === 'analista') {
-            document.getElementById('seccionPDF')?.classList.add('hidden');
-        } else {
-            const hoyStr = new Date().toISOString().slice(0, 10);
-            if (document.getElementById('fecha_desde')) document.getElementById('fecha_desde').value = hoyStr;
-            if (document.getElementById('fecha_hasta')) document.getElementById('fecha_hasta').value = hoyStr;
+            document.getElementById('bloqueReportePDF')?.classList.add('hidden');
         }
 
         function formatearNumero(num) {
@@ -182,6 +190,11 @@
             window.location.replace('/');
         }
 
+        async function aplicarFiltroFechas() {
+            currentPage = 1;
+            await cargarDashboard();
+        }
+
         async function generarReportePDF() {
             const desde = document.getElementById('fecha_desde').value;
             const hasta = document.getElementById('fecha_hasta').value;
@@ -205,7 +218,6 @@
 
                 const blob = await response.blob();
                 const url = window.URL.createObjectURL(blob);
-
                 const nuevaVentana = window.open(url, '_blank');
 
                 if (!nuevaVentana) {
@@ -235,9 +247,17 @@
                 return;
             }
 
-            // CARGA DE KPIS
+            const desde = document.getElementById('fecha_desde')?.value || '';
+            const hasta = document.getElementById('fecha_hasta')?.value || '';
+
+            // 1. CARGA DE KPIS CON FILTRO DE FECHAS
             try {
-                const resKpi = await fetch('/api/salidas/dashboard/kpis', {
+                let urlKpis = '/api/salidas/dashboard/kpis';
+                if (desde && hasta) {
+                    urlKpis += `?fecha_inicio=${desde}&fecha_fin=${hasta}`;
+                }
+
+                const resKpi = await fetch(urlKpis, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -245,6 +265,13 @@
                     const dataKpi = await resKpi.json();
                     document.getElementById('kpiFecha').innerText = dataKpi.fecha;
                     document.getElementById('kpiTotal').innerText = formatearNumero(dataKpi.total_unidades_hoy);
+                    
+                    const badgeRango = document.getElementById('badgeRangoKpi');
+                    if (desde && hasta && (desde !== hoyStr || hasta !== hoyStr)) {
+                        badgeRango.innerText = "RANGO SELECCIONADO";
+                    } else {
+                        badgeRango.innerText = "FECHA DE HOY";
+                    }
 
                     const divGrupos = document.getElementById('kpiGruposList');
                     if (dataKpi.totales_grupo && dataKpi.totales_grupo.length > 0) {
@@ -255,7 +282,7 @@
                             </div>
                         `).join('');
                     } else {
-                        divGrupos.innerHTML = `<p class="text-xs text-gray-400">Sin datos de grupos hoy...</p>`;
+                        divGrupos.innerHTML = `<p class="text-xs text-gray-400">Sin datos de grupos en el rango...</p>`;
                     }
 
                     const divSku = document.getElementById('kpiSkuList');
@@ -270,16 +297,21 @@
                             </div>
                         `).join('');
                     } else {
-                        divSku.innerHTML = `<p class="text-xs text-gray-400">Sin datos de SKU hoy...</p>`;
+                        divSku.innerHTML = `<p class="text-xs text-gray-400">Sin datos de SKU en el rango...</p>`;
                     }
                 }
             } catch (err) {
                 mostrarNotificacion("Error al conectar con los indicadores KPI", true);
             }
 
-            // OBTENER SALIDAS GENERALES SIN RESTRICCIÓN DE DÍA (TODOS LOS REGISTROS VERIFICABLES)
+            // 2. OBTENER SALIDAS FILTRADAS POR RANGO DE FECHAS
             try {
-                const resSalidas = await fetch(`/api/salidas/?page=${currentPage}&limit=${limitPerPage}`, {
+                let urlSalidas = `/api/salidas/?page=${currentPage}&limit=${limitPerPage}`;
+                if (desde && hasta) {
+                    urlSalidas += `&fecha_inicio=${desde}&fecha_fin=${hasta}`;
+                }
+
+                const resSalidas = await fetch(urlSalidas, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -295,7 +327,7 @@
 
                     const tbody = document.getElementById('tablaSalidas');
                     if (!salidas || salidas.length === 0) {
-                        tbody.innerHTML = `<tr><td colspan="11" class="p-3 text-center text-gray-400 font-bold">Sin registros de salidas cargados en el sistema.</td></tr>`;
+                        tbody.innerHTML = `<tr><td colspan="11" class="p-3 text-center text-gray-400 font-bold">Sin registros para el rango de fechas seleccionado.</td></tr>`;
                         return;
                     }
 
@@ -369,6 +401,7 @@
             }
 
             try {
+                mostrarNotificacion("⏳ Generando reporte Excel con filtro aplicado...");
                 const response = await fetch(url, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
@@ -379,8 +412,9 @@
                 const downloadUrl = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = downloadUrl;
-                a.download = `Respaldo_Salidas_Almacen_${new Date().toISOString().slice(0,10)}.xlsx`;
+                a.download = `Respaldo_Salidas_Almacen_${desde}_a_${hasta}.xlsx`;
                 a.click();
+                mostrarNotificacion("✅ Descarga de Excel completada.");
             } catch (err) {
                 mostrarNotificacion("Error al exportar el archivo Excel", true);
             }
