@@ -330,9 +330,8 @@ def obtener_kpis_dashboard(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
-    # CORRECCIÓN CLAVE: Se remueve el filtro restrictivo de recibido_almacen == True
-    # para reflejar toda la producción física escaneada en planta.
-    query = db.query(models.SalidaProduccion)
+    # FILTRO ESTRICTO: Solo sumar registros que hayan sido CONCILIADOS por almacén
+    query = db.query(models.SalidaProduccion).filter(models.SalidaProduccion.recibido_almacen == True)
 
     if fecha_inicio and fecha_fin:
         dt_inicio = datetime.combine(fecha_inicio, time.min)
@@ -408,7 +407,7 @@ def exportar_excel(
     ws = wb.active
     ws.title = "Salidas QR"
 
-    # 1. ENCABEZADOS EXACTOS SEGÚN LA IMAGEN
+    # ENCABEZADOS SEGÚN FORMATO SOLICITADO
     encabezados = [
         "N° TICKETS",
         "FECHA",
@@ -422,7 +421,6 @@ def exportar_excel(
     ]
     ws.append(encabezados)
 
-    # 2. ESTILOS VISUALES DEL ENCABEZADO
     fill_azul = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
     font_blanca = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
     
@@ -444,7 +442,6 @@ def exportar_excel(
         cell.alignment = align_center
         cell.border = borde_fino
         
-        # Resaltar estilo especial para la celda USUARIO
         if text == "USUARIO":
             cell.fill = fill_blanco_usuario
             cell.font = font_negra_usuario
@@ -452,7 +449,6 @@ def exportar_excel(
             cell.fill = fill_azul
             cell.font = font_blanca
 
-    # 3. LLENADO DE REGISTROS ALINEADOS CON LAS NUEVAS COLUMNAS
     for s in salidas:
         nombre_usuario = s.usuario.username if s.usuario else "DESCONOCIDO"
         f_escaneo_str = s.fecha_hora.strftime("%d/%m/%Y %I:%M:%S %p") if s.fecha_hora else "N/A"
@@ -469,7 +465,6 @@ def exportar_excel(
             s.fecha_vencimiento or "N/A"
         ])
 
-    # 4. AUTO-AJUSTE ANCHO DE COLUMNAS
     for col in ws.columns:
         max_len = max(len(str(cell.value or '')) for cell in col)
         col_letter = openpyxl.utils.get_column_letter(col[0].column)
