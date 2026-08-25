@@ -12,16 +12,21 @@ from app.database import engine, Base, get_db
 from app import models, schemas, auth
 from app.routes import salidas
 
-# 1. Función para migrar la base de datos en caso de nuevas columnas
+# 1. Función para migrar la base de datos agregando todas las columnas faltantes
 def migrar_base_de_datos():
     with engine.connect() as conn:
         try:
-            # Agregar columna pregunta_secreta si no existe
+            # Migraciones para la tabla de Usuarios
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS pregunta_secreta VARCHAR;"))
-            # Agregar columna respuesta_secreta_hash si no existe
             conn.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS respuesta_secreta_hash VARCHAR;"))
+            
+            # Migraciones indispensables para la Conciliación de Almacén en Salidas
+            conn.execute(text("ALTER TABLE salidas_produccion ADD COLUMN IF NOT EXISTS recibido_almacen BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE salidas_produccion ADD COLUMN IF NOT EXISTS fecha_hora_recepcion TIMESTAMP WITHOUT TIME ZONE;"))
+            conn.execute(text("ALTER TABLE salidas_produccion ADD COLUMN IF NOT EXISTS usuario_recepcion_id INTEGER REFERENCES usuarios(id);"))
+            
             conn.commit()
-            print(" -> Migración de BD completada: Columnas de seguridad verificadas/agregadas.")
+            print(" -> Migración de BD completada: Todas las columnas de Almacén y Usuarios verificadas/agregadas.")
         except Exception as e:
             print(f" -> Aviso migración BD: {e}")
 
@@ -68,19 +73,22 @@ def crear_usuarios_iniciales():
         print(" -> Webmaster por defecto creado: Usuario='webmaster', Clave='Webmaster2026*'")
 
 
-# --- Vistas HTML ---
+# --- Vistas HTML Protegidas por Rol ---
 @app.get("/")
 def vista_login():
     return respuesta_html_sin_cache("index.html")
 
+# Accesible por Analista, Almacenista, Coordinador y Webmaster
 @app.get("/scanner-view")
 def vista_escanner():
     return respuesta_html_sin_cache("scanner.html")
 
+# Accesible por Consultor, Coordinador y Webmaster
 @app.get("/dashboard-view")
 def vista_dashboard():
     return respuesta_html_sin_cache("dashboard.html")
 
+# Exclusivo para Webmaster
 @app.get("/webmaster-view")
 def vista_webmaster():
     return respuesta_html_sin_cache("webmaster.html")
@@ -108,7 +116,7 @@ def login(
     return {"access_token": access_token, "token_type": "bearer", "rol": usuario.rol}
 
 
-# --- Registro Público de Usuarios ---
+# --- Registro Público de Usuarios (Se crean como analista por defecto) ---
 @app.post("/registro-publico", response_model=schemas.UsuarioResponse)
 def registro_publico(
     usuario: schemas.UsuarioCreate, 
@@ -225,7 +233,6 @@ def eliminar_usuario(
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    # Bloqueo estricto: Ningún usuario con rol Webmaster se puede eliminar
     if user.rol.lower() == "webmaster":
         raise HTTPException(status_code=400, detail="El usuario Webmaster está protegido y no puede ser eliminado.")
 
