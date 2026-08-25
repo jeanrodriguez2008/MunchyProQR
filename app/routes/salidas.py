@@ -134,14 +134,12 @@ async def conciliar_entrada_almacen(
             "usuario": str(usuario_actual.username).strip()
         }
 
-        # ENCABEZADOS ESPECIALES PARA EVITAR BLOQUEOS DE RENDER (TOO MANY REQUESTS)
         headers = {
             "User-Agent": "MunchyProQR-Internal-Sync/2.0",
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
 
-        # ENVÍO CON MANEJO DE RETRY
         try:
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
                 res = await client.post(URL_MUNCHYGUARD_PT, json=payload_guard, headers=headers)
@@ -163,7 +161,6 @@ async def conciliar_entrada_almacen(
                 detail=f"Error de Conexión. No se alcanzó el KARDEX ({URL_MUNCHYGUARD_PT})."
             )
 
-        # SI SE GUARDA EN KARDEX, ACTUALIZAMOS EL ESTADO LOCAL
         db.query(models.SalidaProduccion).filter(
             models.SalidaProduccion.id == ticket.id
         ).update({
@@ -331,7 +328,9 @@ def obtener_kpis_dashboard(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
-    query = db.query(models.SalidaProduccion).filter(models.SalidaProduccion.recibido_almacen == True)
+    # CORRECCIÓN CLAVE: Se remueve el filtro restrictivo de recibido_almacen == True
+    # para reflejar toda la producción física escaneada en planta.
+    query = db.query(models.SalidaProduccion)
 
     if fecha_inicio and fecha_fin:
         dt_inicio = datetime.combine(fecha_inicio, time.min)
@@ -340,7 +339,9 @@ def obtener_kpis_dashboard(
         texto_fecha = f"{fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}"
     else:
         hoy = date.today()
-        query = query.filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)
+        dt_inicio = datetime.combine(hoy, time.min)
+        dt_fin = datetime.combine(hoy, time.max)
+        query = query.filter(models.SalidaProduccion.fecha_hora.between(dt_inicio, dt_fin))
         texto_fecha = hoy.strftime("%d/%m/%Y")
     
     total_unidades = db.query(func.sum(models.SalidaProduccion.cantidad))\
