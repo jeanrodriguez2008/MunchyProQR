@@ -91,6 +91,16 @@ def requiere_coordinador(
         )
     return usuario_actual
 
+def requiere_consultor_o_superior(
+    usuario_actual: Usuario = Depends(obtener_usuario_actual)
+) -> Usuario:
+    if usuario_actual.rol.lower() not in ["consultor", "coordinador", "webmaster"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requieren permisos de Consultor, Coordinador o Webmaster"
+        )
+    return usuario_actual
+
 def requiere_almacenista_o_superior(
     usuario_actual: Usuario = Depends(obtener_usuario_actual)
 ) -> Usuario:
