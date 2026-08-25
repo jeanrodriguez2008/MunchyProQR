@@ -166,6 +166,7 @@
             const campos = limpio.split('|');
 
             if (campos.length >= 11) {
+                // PARSEO CORREGIDO SEGÚN LA ESTRUCTURA DEL QR DE ESCRITORIO
                 return {
                     codigo_qr: limpio,
                     codigo_articulo: campos[0]?.trim() || '',
@@ -178,7 +179,7 @@
                     grupo: campos[7]?.trim() || '',
                     fecha_recibo: campos[8]?.trim() || '',
                     fecha_contabilizacion: campos[9]?.trim() || '',
-                    num_op: campos[10]?.trim() || ''
+                    num_op: campos[10]?.trim() || '' // AHORA RECIBE LOS 7 DÍGITOS DE LA OP
                 };
             }
             return null;
@@ -273,7 +274,6 @@
         async function confirmarConciliacionAlmacen(datos) {
             const ticketNumero = typeof datos === 'object' ? datos.num_recibo : datos;
 
-            // CONSULTA DIRECTA AL ENDPOINT DE VERIFICACIÓN EN BASE DE DATOS
             try {
                 const resVerif = await fetch(`/api/salidas/verificar/${encodeURIComponent(ticketNumero)}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
@@ -490,7 +490,6 @@
 
         async function cargarUltimos() {
             try {
-                // PARAMETRO PARA EVITAR CACHÉ DEL NAVEGADOR
                 const res = await fetch(`/api/salidas/?page=1&limit=50&_t=${Date.now()}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
