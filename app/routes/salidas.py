@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from datetime import datetime, date
+from datetime import datetime, date, time
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
@@ -196,6 +196,8 @@ def listar_salidas(
     page: int = Query(1, ge=1, description="Número de página"),
     limit: int = Query(50, ge=1, le=200, description="Registros por página"),
     solo_hoy: bool = Query(False, description="Filtrar solo los registros del día de hoy"),
+    fecha_inicio: Optional[date] = Query(None, description="Fecha de inicio opcional (YYYY-MM-DD)"),
+    fecha_fin: Optional[date] = Query(None, description="Fecha de fin opcional (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
@@ -203,7 +205,11 @@ def listar_salidas(
         offset = (page - 1) * limit
         query = db.query(models.SalidaProduccion)
 
-        if solo_hoy:
+        if fecha_inicio and fecha_fin:
+            dt_inicio = datetime.combine(fecha_inicio, time.min)
+            dt_fin = datetime.combine(fecha_fin, time.max)
+            query = query.filter(models.SalidaProduccion.fecha_hora.between(dt_inicio, dt_fin))
+        elif solo_hoy:
             hoy = date.today()
             query = query.filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)
 
@@ -320,27 +326,33 @@ def eliminar_salida(
 
 @router.get("/dashboard/kpis")
 def obtener_kpis_dashboard(
+    fecha_inicio: Optional[date] = Query(None, description="Fecha de inicio opcional (YYYY-MM-DD)"),
+    fecha_fin: Optional[date] = Query(None, description="Fecha de fin opcional (YYYY-MM-DD)"),
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.obtener_usuario_actual)
 ):
-    hoy = date.today()
+    query = db.query(models.SalidaProduccion).filter(models.SalidaProduccion.recibido_almacen == True)
+
+    if fecha_inicio and fecha_fin:
+        dt_inicio = datetime.combine(fecha_inicio, time.min)
+        dt_fin = datetime.combine(fecha_fin, time.max)
+        query = query.filter(models.SalidaProduccion.fecha_hora.between(dt_inicio, dt_fin))
+        texto_fecha = f"{fecha_inicio.strftime('%d/%m/%Y')} al {fecha_fin.strftime('%d/%m/%Y')}"
+    else:
+        hoy = date.today()
+        query = query.filter(func.date(models.SalidaProduccion.fecha_hora) == hoy)
+        texto_fecha = hoy.strftime("%d/%m/%Y")
     
-    total_hoy = db.query(func.sum(models.SalidaProduccion.cantidad))\
-                  .filter(
-                      func.date(models.SalidaProduccion.fecha_hora) == hoy,
-                      models.SalidaProduccion.recibido_almacen == True
-                  )\
-                  .scalar() or 0
+    total_unidades = db.query(func.sum(models.SalidaProduccion.cantidad))\
+                       .filter(models.SalidaProduccion.id.in_(query.with_entities(models.SalidaProduccion.id)))\
+                       .scalar() or 0
 
     totales_por_sku = db.query(
                           models.SalidaProduccion.codigo_articulo,
                           models.SalidaProduccion.descripcion,
                           func.sum(models.SalidaProduccion.cantidad).label("total")
                       )\
-                      .filter(
-                          func.date(models.SalidaProduccion.fecha_hora) == hoy,
-                          models.SalidaProduccion.recibido_almacen == True
-                      )\
+                      .filter(models.SalidaProduccion.id.in_(query.with_entities(models.SalidaProduccion.id)))\
                       .group_by(models.SalidaProduccion.codigo_articulo, models.SalidaProduccion.descripcion)\
                       .order_by(func.sum(models.SalidaProduccion.cantidad).desc())\
                       .all()
@@ -349,17 +361,14 @@ def obtener_kpis_dashboard(
                             models.SalidaProduccion.grupo,
                             func.sum(models.SalidaProduccion.cantidad).label("total")
                         )\
-                        .filter(
-                            func.date(models.SalidaProduccion.fecha_hora) == hoy,
-                            models.SalidaProduccion.recibido_almacen == True
-                        )\
+                        .filter(models.SalidaProduccion.id.in_(query.with_entities(models.SalidaProduccion.id)))\
                         .group_by(models.SalidaProduccion.grupo)\
                         .order_by(func.sum(models.SalidaProduccion.cantidad).desc())\
                         .all()
 
     return {
-        "fecha": hoy.strftime("%d/%m/%Y"),
-        "total_unidades_hoy": total_hoy,
+        "fecha": texto_fecha,
+        "total_unidades_hoy": total_unidades,
         "totales_sku": [
             {
                 "sku": item.codigo_articulo or "N/A",
@@ -386,10 +395,9 @@ def exportar_excel(
     query = db.query(models.SalidaProduccion)
 
     if fecha_inicio and fecha_fin:
-        query = query.filter(
-            func.date(models.SalidaProduccion.fecha_hora) >= fecha_inicio,
-            func.date(models.SalidaProduccion.fecha_hora) <= fecha_fin
-        )
+        dt_inicio = datetime.combine(fecha_inicio, time.min)
+        dt_fin = datetime.combine(fecha_fin, time.max)
+        query = query.filter(models.SalidaProduccion.fecha_hora.between(dt_inicio, dt_fin))
 
     salidas = query.order_by(models.SalidaProduccion.id.desc()).all()
 
@@ -448,7 +456,8 @@ def exportar_excel(
     wb.save(excel_buf)
     excel_buf.seek(0)
 
-    nombre_archivo = f"Respaldo_Salidas_Almacen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    nombre_rango = f"{fecha_inicio}_a_{fecha_fin}" if (fecha_inicio and fecha_fin) else "General"
+    nombre_archivo = f"Respaldo_Salidas_Almacen_{nombre_rango}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
 
     return StreamingResponse(
         excel_buf,
@@ -464,10 +473,9 @@ def generar_reporte_pdf(
     db: Session = Depends(get_db),
     usuario_actual: models.Usuario = Depends(auth.requiere_coordinador)
 ):
-    query = db.query(models.SalidaProduccion).filter(
-        func.date(models.SalidaProduccion.fecha_hora) >= fecha_inicio,
-        func.date(models.SalidaProduccion.fecha_hora) <= fecha_fin
-    )
+    dt_inicio = datetime.combine(fecha_inicio, time.min)
+    dt_fin = datetime.combine(fecha_fin, time.max)
+    query = db.query(models.SalidaProduccion).filter(models.SalidaProduccion.fecha_hora.between(dt_inicio, dt_fin))
     salidas = query.all()
 
     if not salidas:
